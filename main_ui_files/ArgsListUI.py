@@ -2,6 +2,7 @@ from PySide6.QtCore import Signal
 from PySide6 import QtCore, QtWidgets
 
 from main_ui_files.AccelerateUI import AccelerateWidget
+from main_ui_files.AdditionalResolutionsUI import AdditionalResolutionsWidget
 from main_ui_files.BucketUI import BucketWidget
 from main_ui_files.ExtraArgsUI import ExtraArgsWidget
 from main_ui_files.GeneralUI import GeneralWidget
@@ -26,6 +27,7 @@ class ArgsWidget(QtWidgets.QWidget):
         self.general_widget = GeneralWidget()
         self.network_widget = NetworkWidget()
         self.optimizer_widget = OptimizerWidget()
+        self.additional_resolutions_widget = AdditionalResolutionsWidget()
 
         self.setup_widget()
         self.setup_args_widgets()
@@ -54,6 +56,7 @@ class ArgsWidget(QtWidgets.QWidget):
         self.args_widget_array.append(self.optimizer_widget)
         self.args_widget_array.append(SavingWidget())
         self.args_widget_array.append(BucketWidget())
+        self.args_widget_array.append(self.additional_resolutions_widget)
         self.args_widget_array.append(SampleWidget())
         self.args_widget_array.append(LoggingWidget())
         self.accelerate_widget = AccelerateWidget()

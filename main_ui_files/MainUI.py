@@ -103,41 +103,108 @@ class MainWidget(QWidget):
             print(message)
             return
         args, subset_args = self.get_args()
+        subsets_list = list(subset_args.values())
+
         new_args = {arg: {"args": val} for arg, val in args["args"].items()}
-        for arg, val in args["dataset"].items():
-            if arg in new_args:
-                new_args[arg]["dataset_args"] = val
-            else:
-                new_args[arg] = {"dataset_args": val}
-        new_args["subsets"] = list(subset_args.values())
+        extra_datasets = self.args_widget.additional_resolutions_widget.get_extra_datasets()
+
+        if extra_datasets:
+            # Multi-resolution Format 2: pull general_args.dataset_args and
+            # bucket_args.dataset_args into the first [[datasets]] block,
+            # then emit each additional resolution as another [[datasets]] block.
+            # All datasets share the same subset list.
+            dataset_section = args["dataset"]
+            first_general = dataset_section.pop("general_args", {})
+            first_bucket = dataset_section.pop("bucket_args", {})
+            first_dataset = {**first_general, **first_bucket, "subsets": subsets_list}
+            all_datasets = [first_dataset]
+            for d in extra_datasets:
+                all_datasets.append({**d, "subsets": subsets_list})
+            new_args["datasets"] = all_datasets
+            # Any remaining dataset_args (rare for Anima) still emit normally.
+            for arg, val in dataset_section.items():
+                if arg in new_args:
+                    new_args[arg]["dataset_args"] = val
+                else:
+                    new_args[arg] = {"dataset_args": val}
+        else:
+            for arg, val in args["dataset"].items():
+                if arg in new_args:
+                    new_args[arg]["dataset_args"] = val
+                else:
+                    new_args[arg] = {"dataset_args": val}
+            new_args["subsets"] = subsets_list
+
         TomlFunctions.save_toml(new_args, file_name)
 
     def load_toml(self, file_name: Path | None = None) -> None:
-        args, dataset_args = self.process_toml(file_name)
-        if not args and not dataset_args:
+        args, dataset_args, extra_datasets = self.process_toml(file_name)
+        if not args and not dataset_args and not extra_datasets:
             return
         self.args_widget.load_args(args, dataset_args)
         self.subset_widget.load_dataset_args(dataset_args)
+        self.args_widget.additional_resolutions_widget.load_extra_datasets(extra_datasets)
 
-    def process_toml(self, file_name: Path | None = None) -> tuple[dict, dict]:
+    def process_toml(
+        self, file_name: Path | None = None
+    ) -> tuple[dict, dict, list[dict]]:
         loaded_args = TomlFunctions.load_toml(file_name)
         if not loaded_args:
-            return {}, {}
-        args = {}
-        dataset_args = {}
-        if "subsets" in loaded_args:
-            dataset_args["subsets"] = loaded_args["subsets"]
-            del loaded_args["subsets"]
+            return {}, {}, []
+        args: dict = {}
+        dataset_args: dict = {}
+        extra_datasets: list[dict] = []
 
-        # Older tomls may still have a train_mode block; ignore it.
+        # sd-scripts' multi-resolution format: [[datasets]] each holding their
+        # own resolution / bucket settings and a nested [[datasets.subsets]].
+        # The first dataset feeds General Args + Bucket Args; the rest go into
+        # the AdditionalResolutionsWidget so the multi-res shape round-trips.
+        if "datasets" in loaded_args:
+            datasets = loaded_args.pop("datasets")
+            if datasets:
+                first = datasets[0]
+                general_ds = dataset_args.setdefault("general_args", {})
+                if "resolution" in first:
+                    general_ds["resolution"] = first["resolution"]
+                if "batch_size" in first:
+                    general_ds["batch_size"] = first["batch_size"]
+                bucket_ds = dataset_args.setdefault("bucket_args", {})
+                for key in ("enable_bucket", "min_bucket_reso", "max_bucket_reso",
+                            "bucket_reso_steps", "bucket_no_upscale", "multires_training"):
+                    if key in first:
+                        bucket_ds[key] = first[key]
+
+                # Subsets: union across all datasets, deduped by image_dir.
+                seen: set[str] = set()
+                merged: list[dict] = []
+                for ds in datasets:
+                    for sub in ds.get("subsets", []):
+                        key = sub.get("image_dir", "")
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        merged.append(sub)
+                if merged:
+                    dataset_args["subsets"] = merged
+
+                # Remaining dataset blocks become AdditionalResolutionsWidget rows.
+                for ds in datasets[1:]:
+                    extra_datasets.append({k: v for k, v in ds.items() if k != "subsets"})
+
+        if "subsets" in loaded_args:
+            dataset_args["subsets"] = loaded_args.pop("subsets")
+
+        # Older tomls may still carry sections that no longer have a UI; ignore them.
         loaded_args.pop("train_mode", None)
 
         for arg, val in loaded_args.items():
+            if not isinstance(val, dict):
+                continue
             if "args" in val:
                 args[arg] = val["args"]
             if "dataset_args" in val:
                 dataset_args[arg] = val["dataset_args"]
-        return args, dataset_args
+        return args, dataset_args, extra_datasets
 
     def start_training(self) -> None:
         if self.training_thread and self.training_thread.is_alive():
@@ -174,7 +241,7 @@ class MainWidget(QWidget):
         self.begin_training_button.setText("Start Training")
 
     def train_helper(self, url: str, train_toml: Path) -> bool:
-        args, dataset_args = self.process_toml(train_toml)
+        args, dataset_args, _ = self.process_toml(train_toml)
         config = json.loads(Path("config.json").read_text())
 
         final_args = {
