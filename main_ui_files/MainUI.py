@@ -1,21 +1,22 @@
 import contextlib
 import json
 import os
+import shutil
+from pathlib import Path
+from threading import Thread
+from time import sleep
+
+import requests
 from PySide6 import QtWidgets
-from PySide6.QtWidgets import QWidget, QGridLayout, QPushButton
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QGridLayout, QPushButton, QWidget
+from requests.exceptions import ConnectionError
+
 from main_ui_files.ArgsListUI import ArgsWidget
+from main_ui_files.QueueUI import QueueWidget
 from main_ui_files.SubsetListUI import SubsetListWidget
 from modules import ScrollOnSelect, TomlFunctions
 from modules.LineEditHighlight import LineEditWithHighlight
-from main_ui_files.QueueUI import QueueWidget
-from modules.Enums import TrainingModes
-from pathlib import Path
-from threading import Thread
-from PySide6.QtCore import Signal
-import requests
-from requests.exceptions import ConnectionError
-from time import sleep
-import shutil
 
 
 class MainWidget(QWidget):
@@ -32,7 +33,6 @@ class MainWidget(QWidget):
         self.begin_training_button = QPushButton("Start Training")
         self.backend_url_input = LineEditWithHighlight()
         self.tab_widget = ScrollOnSelect.TabView()
-        self.train_mode = TrainingModes.LORA
 
         self.setup_widget()
         self.setup_connections()
@@ -110,50 +110,34 @@ class MainWidget(QWidget):
             else:
                 new_args[arg] = {"dataset_args": val}
         new_args["subsets"] = list(subset_args.values())
-        new_args["train_mode"] = {"train_mode": self.train_mode.value}
         TomlFunctions.save_toml(new_args, file_name)
 
     def load_toml(self, file_name: Path | None = None) -> None:
-        args, dataset_args, train_mode = self.process_toml(file_name)
+        args, dataset_args = self.process_toml(file_name)
         if not args and not dataset_args:
             return
-        if train_mode == TrainingModes.LORA:
-            self.set_train_lora()
-        else:
-            self.set_train_ti()
         self.args_widget.load_args(args, dataset_args)
         self.subset_widget.load_dataset_args(dataset_args)
-
-    def set_train_lora(self) -> None:
-        if self.train_mode != TrainingModes.LORA:
-            self.train_mode = TrainingModes.LORA
-            self.args_widget.set_lora_training()
-
-    def set_train_ti(self) -> None:
-        if self.train_mode != TrainingModes.TI:
-            self.train_mode = TrainingModes.TI
-            self.args_widget.set_ti_training()
 
     def process_toml(self, file_name: Path | None = None) -> tuple[dict, dict]:
         loaded_args = TomlFunctions.load_toml(file_name)
         if not loaded_args:
-            return {}, {}, self.train_mode
+            return {}, {}
         args = {}
         dataset_args = {}
         if "subsets" in loaded_args:
             dataset_args["subsets"] = loaded_args["subsets"]
             del loaded_args["subsets"]
 
-        train_mode = TrainingModes.LORA
-        if "train_mode" in loaded_args:
-            train_mode = TrainingModes(loaded_args["train_mode"]["train_mode"])
+        # Older tomls may still have a train_mode block; ignore it.
+        loaded_args.pop("train_mode", None)
 
         for arg, val in loaded_args.items():
             if "args" in val:
                 args[arg] = val["args"]
             if "dataset_args" in val:
                 dataset_args[arg] = val["dataset_args"]
-        return args, dataset_args, train_mode
+        return args, dataset_args
 
     def start_training(self) -> None:
         if self.training_thread and self.training_thread.is_alive():
@@ -190,10 +174,9 @@ class MainWidget(QWidget):
         self.begin_training_button.setText("Start Training")
 
     def train_helper(self, url: str, train_toml: Path) -> bool:
-        args, dataset_args, train_mode = self.process_toml(train_toml)
+        args, dataset_args = self.process_toml(train_toml)
         config = json.loads(Path("config.json").read_text())
 
-        # Include accelerate settings in validation request for proper warmup step calculation
         final_args = {
             "args": args,
             "dataset": dataset_args,
@@ -206,7 +189,7 @@ class MainWidget(QWidget):
             self.training_error.emit(
                 "Connection Error",
                 f"Failed to connect to the backend at {url}.\n\n"
-                "Please ensure the backend is running and the URL is correct."
+                "Please ensure the backend is running and the URL is correct.",
             )
             return False
         if response.status_code != 200:
@@ -228,19 +211,15 @@ class MainWidget(QWidget):
                 args["saving_args"].get("output_name", "output_args"),
             )
         os.remove(train_toml)
-        is_sdxl = str(args.get("general_args").get("sdxl", False))
-        is_flux = str(bool(args.get("flux_args")))
-        is_anima = str(bool(args.get("anima_args")))
 
-        # Build train params including accelerate settings
+        # Anima is the only supported training mode.
         train_params = {
-            "train_mode": train_mode.value,
-            "sdxl": is_sdxl,
-            "flux": is_flux,
-            "anima": is_anima,
+            "train_mode": "lora",
+            "sdxl": "False",
+            "flux": "False",
+            "anima": "True",
         }
 
-        # Add accelerate settings if enabled
         accel = config.get("accelerate", {})
         if accel.get("enabled", False):
             train_params["accelerate_enabled"] = "True"

@@ -89,10 +89,6 @@ class MainWindow(QMainWindow, QtStyleTools):
             lambda _=False: self.change_theme(0, False, True)
         )
         self.widget.lora_resize_action.triggered.connect(self.run_resize)
-        self.widget.set_train_lora_action.triggered.connect(
-            self.main_widget.set_train_lora
-        )
-        self.widget.set_train_ti_action.triggered.connect(self.main_widget.set_train_ti)
         self.tensorboard_action.triggered.connect(self.launch_tensorboard)
         self.compact_mode_action.triggered.connect(lambda: self.change_theme())
 
