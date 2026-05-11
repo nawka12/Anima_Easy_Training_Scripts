@@ -241,8 +241,21 @@ class MainWidget(QWidget):
         self.begin_training_button.setText("Start Training")
 
     def train_helper(self, url: str, train_toml: Path) -> bool:
-        args, dataset_args, _ = self.process_toml(train_toml)
+        args, dataset_args, extra_datasets = self.process_toml(train_toml)
         config = json.loads(Path("config.json").read_text())
+
+        if extra_datasets:
+            # Multi-resolution: post the {"datasets": [{<groups>, "subsets": [...]}, ...]}
+            # shape the backend understands. Subsets are shared across resolutions.
+            subsets_list = dataset_args.get("subsets", [])
+            first_dataset = dict(dataset_args)
+            payload_datasets = [first_dataset]
+            for extra in extra_datasets:
+                payload_datasets.append({
+                    "general_args": dict(extra),
+                    "subsets": subsets_list,
+                })
+            dataset_args = {"datasets": payload_datasets}
 
         final_args = {
             "args": args,
