@@ -85,8 +85,8 @@ class NetworkWidget(BaseWidget):
         self.widget.lycoris_preset_input.textChanged.connect(
             lambda x: self.edit_network_args("preset", x, True)
         )
-        self.widget.network_dim_input.valueChanged.connect(lambda x: self.edit_args("network_dim", x))
-        self.widget.conv_dim_input.valueChanged.connect(lambda x: self.edit_network_args("conv_dim", x, True))
+        self.widget.network_dim_input.valueChanged.connect(self._on_network_dim_changed)
+        self.widget.conv_dim_input.valueChanged.connect(self._on_conv_dim_changed)
         self.widget.network_alpha_input.valueChanged.connect(
             lambda x: self.edit_args("network_alpha", round(x, 2))
         )
@@ -173,7 +173,7 @@ class NetworkWidget(BaseWidget):
         self.toggle_kohya(algo in {"lora", "locon", "dylora"})
         dora = self.toggle_lycoris(
             algo not in {"lora", "locon", "dylora"},
-            algo in {"locon (lycoris)", "loha", "lokr", "abba"},
+            algo in {"locon (lycoris)", "loha", "lokr", "abba", "gora", "ralora"},
         )
         self.lycoris = algo not in {"lora", "locon", "dylora"}
         self.widget.bypass_mode_enable.setEnabled(self.lycoris and not dora)
@@ -186,8 +186,31 @@ class NetworkWidget(BaseWidget):
         self.toggle_block_weight(algo in {"lora", "locon", "dylora"}, algo == "lora")
         self.toggle_dropout(
             algo != "ia3",
-            algo in {"locon (lycoris)", "loha", "lokr", "abba"} and self.widget.dora_enable.isChecked(),
+            algo in {"locon (lycoris)", "loha", "lokr", "abba", "gora", "ralora"} and self.widget.dora_enable.isChecked(),
         )
+        # GoRA / RaLoRA: alpha is forced to equal dim, so disable alpha inputs and sync values
+        is_gora = algo in {"gora", "ralora"}
+        self.widget.network_alpha_input.setEnabled(not is_gora)
+        self.widget.conv_alpha_input.setEnabled(not is_gora)
+        if is_gora:
+            self.widget.network_alpha_input.setValue(float(self.widget.network_dim_input.value()))
+            self.widget.conv_alpha_input.setValue(float(self.widget.conv_dim_input.value()))
+
+    def _on_network_dim_changed(self, value: int) -> None:
+        self.edit_args("network_dim", value)
+        if self.widget.algo_select.currentText().lower() in {"gora", "ralora"}:
+            self.widget.network_alpha_input.blockSignals(True)
+            self.widget.network_alpha_input.setValue(float(value))
+            self.widget.network_alpha_input.blockSignals(False)
+            self.edit_args("network_alpha", round(float(value), 2))
+
+    def _on_conv_dim_changed(self, value: int) -> None:
+        self.edit_network_args("conv_dim", value, True)
+        if self.widget.algo_select.currentText().lower() in {"gora", "ralora"}:
+            self.widget.conv_alpha_input.blockSignals(True)
+            self.widget.conv_alpha_input.setValue(float(value))
+            self.widget.conv_alpha_input.blockSignals(False)
+            self.edit_network_args("conv_alpha", float(value), True)
 
     def change_min_timestep(self, value: int) -> None:
         if value >= self.widget.max_timestep_input.value():
@@ -454,6 +477,8 @@ class NetworkWidget(BaseWidget):
                 "glora": "GLoRA",
                 "abba": "ABBA",
                 "tlora": "TLora",
+                "gora": "GoRA",
+                "ralora": "RaLoRA",
             }
             algo_key = str(network_args.get("algo", "")).lower()
             if algo_key in algo_modes:
@@ -469,8 +494,13 @@ class NetworkWidget(BaseWidget):
         self.widget.lycoris_preset_input.setText(network_args.get("preset", ""))
         self.widget.network_dim_input.setValue(args.get("network_dim", 32))
         self.widget.conv_dim_input.setValue(network_args.get("conv_dim", 32))
-        self.widget.network_alpha_input.setValue(args.get("network_alpha", 16.0))
-        self.widget.conv_alpha_input.setValue(network_args.get("conv_alpha", 16.0))
+        if self.widget.algo_select.currentText().lower() in {"gora", "ralora"}:
+            # GoRA / RaLoRA force alpha = dim; ignore TOML alpha values
+            self.widget.network_alpha_input.setValue(float(self.widget.network_dim_input.value()))
+            self.widget.conv_alpha_input.setValue(float(self.widget.conv_dim_input.value()))
+        else:
+            self.widget.network_alpha_input.setValue(args.get("network_alpha", 16.0))
+            self.widget.conv_alpha_input.setValue(network_args.get("conv_alpha", 16.0))
         self.widget.min_timestep_input.setValue(args.get("min_timestep", 0))
         self.widget.max_timestep_input.setValue(args.get("max_timestep", 1000))
         if "network_train_unet_only" in args:

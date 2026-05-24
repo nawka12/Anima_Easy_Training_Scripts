@@ -749,6 +749,16 @@
            <string>TLora</string>
           </property>
          </item>
+         <item>
+          <property name="text">
+           <string>GoRA</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>RaLoRA</string>
+          </property>
+         </item>
         </widget>
        </item>
       </layout>
