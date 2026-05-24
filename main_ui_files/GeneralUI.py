@@ -26,6 +26,9 @@ ANIMA_KEYS: tuple[str, ...] = (
     "attn_mode",
     "split_attn",
     "unsloth_offload_checkpointing",
+    "flow_use_ot",
+    "contrastive_flow_matching",
+    "cfm_lambda",
 )
 
 
@@ -106,6 +109,8 @@ class GeneralWidget(BaseWidget):
         self._sync_vae_chunk()
         self._sync_blocks_to_swap()
         self._sync_flash_attn()
+        self._sync_flow_use_ot()
+        self._sync_contrastive_flow_matching()
 
     def setup_connections(self) -> None:
         # Anima model files
@@ -222,6 +227,13 @@ class GeneralWidget(BaseWidget):
         self.widget.unsloth_offload_checkpointing.clicked.connect(
             lambda x: self.edit_anima_args("unsloth_offload_checkpointing", x, optional=True)
         )
+
+        # Anima flow matching
+        self.widget.flow_use_ot_enable.clicked.connect(lambda _: self._sync_flow_use_ot())
+        self.widget.contrastive_flow_matching_enable.clicked.connect(
+            lambda _: self._sync_contrastive_flow_matching()
+        )
+        self.widget.cfm_lambda_input.valueChanged.connect(lambda _: self._sync_contrastive_flow_matching())
 
     # ---------------- handlers ----------------
 
@@ -365,6 +377,20 @@ class GeneralWidget(BaseWidget):
         elif "attn_mode" in self.anima_args:
             del self.anima_args["attn_mode"]
 
+    def _sync_flow_use_ot(self) -> None:
+        self.edit_anima_args(
+            "flow_use_ot", self.widget.flow_use_ot_enable.isChecked(), optional=True
+        )
+
+    def _sync_contrastive_flow_matching(self) -> None:
+        enabled = self.widget.contrastive_flow_matching_enable.isChecked()
+        self.widget.cfm_lambda_input.setEnabled(enabled)
+        self.edit_anima_args("contrastive_flow_matching", enabled, optional=True)
+        if enabled:
+            self.edit_anima_args("cfm_lambda", self.widget.cfm_lambda_input.value())
+        elif "cfm_lambda" in self.anima_args:
+            del self.anima_args["cfm_lambda"]
+
     # ---------------- load/save ----------------
 
     def get_anima_args(self) -> dict:
@@ -423,6 +449,9 @@ class GeneralWidget(BaseWidget):
         self.widget.flash_attn_enable.setChecked(pick("attn_mode", "") == "flash")
         self.widget.split_attn_enable.setChecked(pick("split_attn", False))
         self.widget.unsloth_offload_checkpointing.setChecked(pick("unsloth_offload_checkpointing", False))
+        self.widget.flow_use_ot_enable.setChecked(pick("flow_use_ot", True))
+        self.widget.contrastive_flow_matching_enable.setChecked(pick("contrastive_flow_matching", False))
+        self.widget.cfm_lambda_input.setValue(pick("cfm_lambda", 0.02))
 
         # Re-sync internal args dicts
         self.change_full_type(self.widget.FP16_enable.isChecked(), self.widget.BF16_enable.isChecked())
@@ -460,6 +489,8 @@ class GeneralWidget(BaseWidget):
             self.widget.unsloth_offload_checkpointing.isChecked(),
             optional=True,
         )
+        self._sync_flow_use_ot()
+        self._sync_contrastive_flow_matching()
 
         return True
 

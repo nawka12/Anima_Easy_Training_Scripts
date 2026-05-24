@@ -11,8 +11,9 @@ If you want a general-purpose LoRA trainer, use the upstream. Use this one when 
 - General Args is rewritten around Anima: **DiT model**, **Qwen3**, **VAE**, **T5 tokenizer** (optional) are the four model inputs. SDXL / V2 / V-param / V-pred / FP8 / clip_skip / CLIP max_token_length are gone.
 - New **Anima Sampling** section: `timestep_sampling` (sigma / uniform / sigmoid / shift / flux_shift), `discrete_flow_shift`, `sigmoid_scale`, Qwen3 / T5 max token lengths.
 - New **Anima Memory / Attention** section: `vae_chunk_size`, `blocks_to_swap`, `vae_disable_cache`, `flash_attn`, `split_attn`, `unsloth_offload_checkpointing`. xFormers automatically locks `split_attn` on.
+- New **Anima Flow Matching** section: `flow_use_ot` (cosine optimal-transport noise pairing, on by default), `contrastive_flow_matching` (ΔFM), and `cfm_lambda` (ΔFM weight, Anima default 0.02 — input is enabled only when ΔFM is on).
 - New **Additional Resolutions** widget supports sd-scripts' multi-resolution `[[datasets]]` shape — add a row per extra resolution (each with its own `skip_image_resolution`, `batch_size`, bucket settings) and save round-trips the multi-`[[datasets]]` toml.
-- Flux, EDM² loss weighting, ExperimentalArgs (flow / CFM / debiased estimation), NoiseOffset, and Textual Inversion widgets are removed.
+- Flux, EDM² loss weighting, NoiseOffset, and Textual Inversion widgets are removed, along with the rest of ExperimentalArgs (debiased estimation, etc.); only its Anima-relevant flow-matching controls were kept (see above).
 - Train Mode menu is removed; the backend is always invoked with `anima=True` → `anima_train_network.py`.
 
 Everything else from upstream (network args, optimizer args, queue, sampling, logging, accelerate, custom optimizers via `LoraEasyCustomOptimizer`, etc.) is unchanged.
@@ -89,6 +90,9 @@ timestep_sampling = "sigmoid"
 discrete_flow_shift = 3.0
 sigmoid_scale = 1.0
 attn_mode = "flash"
+flow_use_ot = true
+# contrastive_flow_matching = true   # optional ΔFM objective
+# cfm_lambda = 0.02                   # ΔFM weight (only used when the line above is set)
 
 [network_args.args]
 network_dim = 32

@@ -393,6 +393,36 @@ class Ui_base_args_ui(object):
 
         self.gridLayout_3.addWidget(self.anima_memory_box, 4, 0, 1, 2)
 
+        # ---------------- Anima flow matching row ----------------
+        self.anima_flow_box = QGroupBox(base_args_ui)
+        self.anima_flow_box.setObjectName(u"anima_flow_box")
+        self.anima_flow_layout = QGridLayout(self.anima_flow_box)
+        self.anima_flow_layout.setObjectName(u"anima_flow_layout")
+
+        self.flow_use_ot_enable = QCheckBox(self.anima_flow_box)
+        self.flow_use_ot_enable.setObjectName(u"flow_use_ot_enable")
+        self.flow_use_ot_enable.setChecked(True)
+        self.anima_flow_layout.addWidget(self.flow_use_ot_enable, 0, 0, 1, 1)
+
+        self.contrastive_flow_matching_enable = QCheckBox(self.anima_flow_box)
+        self.contrastive_flow_matching_enable.setObjectName(u"contrastive_flow_matching_enable")
+        self.anima_flow_layout.addWidget(self.contrastive_flow_matching_enable, 0, 1, 1, 1)
+
+        self.cfm_lambda_label = QLabel(self.anima_flow_box)
+        self.cfm_lambda_label.setObjectName(u"cfm_lambda_label")
+        self.anima_flow_layout.addWidget(self.cfm_lambda_label, 0, 2, 1, 1)
+        self.cfm_lambda_input = DoubleSpinBox(self.anima_flow_box)
+        self.cfm_lambda_input.setObjectName(u"cfm_lambda_input")
+        self.cfm_lambda_input.setDecimals(3)
+        self.cfm_lambda_input.setMinimum(-100.0)
+        self.cfm_lambda_input.setMaximum(100.0)
+        self.cfm_lambda_input.setSingleStep(0.001)
+        self.cfm_lambda_input.setValue(0.02)
+        self.cfm_lambda_input.setEnabled(False)
+        self.anima_flow_layout.addWidget(self.cfm_lambda_input, 0, 3, 1, 1)
+
+        self.gridLayout_3.addWidget(self.anima_flow_box, 5, 0, 1, 2)
+
         # ---------------- Comment ----------------
         self.formLayout_2 = QFormLayout()
         self.formLayout_2.setObjectName(u"formLayout_2")
@@ -403,7 +433,7 @@ class Ui_base_args_ui(object):
         self.comment_input.setObjectName(u"comment_input")
         self.comment_input.setEnabled(False)
         self.formLayout_2.setWidget(0, QFormLayout.ItemRole.FieldRole, self.comment_input)
-        self.gridLayout_3.addLayout(self.formLayout_2, 5, 0, 1, 2)
+        self.gridLayout_3.addLayout(self.formLayout_2, 6, 0, 1, 2)
 
         self.retranslateUi(base_args_ui)
 
@@ -487,6 +517,15 @@ class Ui_base_args_ui(object):
         self.split_attn_enable.setText(_t("base_args_ui", u"Split Attention", None))
         self.split_attn_enable.setToolTip(_t("base_args_ui", u"Maps to --split_attn. Auto-enabled (and locked) when xFormers is selected.", None))
         self.unsloth_offload_checkpointing.setText(_t("base_args_ui", u"Unsloth Offload Checkpointing", None))
+
+        # Anima flow matching
+        self.anima_flow_box.setTitle(_t("base_args_ui", u"Anima Flow Matching", None))
+        self.flow_use_ot_enable.setText(_t("base_args_ui", u"Cosine Optimal Transport", None))
+        self.flow_use_ot_enable.setToolTip(_t("base_args_ui", u"Pair latents and noise within a batch using cosine optimal transport instead of fixed pairing. Recommended for Rectified Flow. Maps to --flow_use_ot.", None))
+        self.contrastive_flow_matching_enable.setText(_t("base_args_ui", u"Contrastive Flow Matching", None))
+        self.contrastive_flow_matching_enable.setToolTip(_t("base_args_ui", u"Enable Contrastive Flow Matching (ΔFM): subtracts a negative contrastive loss term to sharpen results. Maps to --contrastive_flow_matching.", None))
+        self.cfm_lambda_label.setText(_t("base_args_ui", u"CFM Lambda", None))
+        self.cfm_lambda_input.setToolTip(_t("base_args_ui", u"Weight for the ΔFM contrastive term. Anima default 0.02. Maps to --cfm_lambda.", None))
 
         # Comment
         self.comment_enable.setText(_t("base_args_ui", u"Comment", None))
