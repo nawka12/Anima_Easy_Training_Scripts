@@ -104,8 +104,8 @@ class GeneralWidget(BaseWidget):
         self.edit_anima_args("qwen3_max_token_length", self.widget.qwen3_max_token_input.value())
         self.edit_anima_args("t5_max_token_length", self.widget.t5_max_token_input.value())
         self.edit_anima_args("timestep_sampling", self.widget.timestep_sampling_selector.currentText())
-        self.edit_anima_args("discrete_flow_shift", self.widget.discrete_flow_shift_input.value())
         self._sync_sigmoid_scale()
+        self._sync_discrete_flow_shift()
         self._sync_vae_chunk()
         self._sync_blocks_to_swap()
         self._sync_flash_attn()
@@ -204,7 +204,7 @@ class GeneralWidget(BaseWidget):
         # Anima sampling
         self.widget.timestep_sampling_selector.currentTextChanged.connect(self.change_timestep_sampling)
         self.widget.discrete_flow_shift_input.valueChanged.connect(
-            lambda x: self.edit_anima_args("discrete_flow_shift", x)
+            lambda _: self._sync_discrete_flow_shift()
         )
         self.widget.sigmoid_scale_input.valueChanged.connect(lambda _: self._sync_sigmoid_scale())
         self.widget.qwen3_max_token_input.valueChanged.connect(
@@ -348,14 +348,24 @@ class GeneralWidget(BaseWidget):
     def change_timestep_sampling(self, _text: str = "") -> None:
         sampling_type = self.widget.timestep_sampling_selector.currentText()
         self.edit_anima_args("timestep_sampling", sampling_type)
-        self.widget.sigmoid_scale_input.setEnabled(sampling_type == "sigmoid")
+        # sigmoid, shift, and flux_shift all use sigmoid_scale to control concentration
+        self.widget.sigmoid_scale_input.setEnabled(sampling_type in ("sigmoid", "shift", "flux_shift"))
+        # sigma uses discrete_flow_shift via the scheduler table; shift applies it directly
+        self.widget.discrete_flow_shift_input.setEnabled(sampling_type in ("sigma", "shift"))
         self._sync_sigmoid_scale()
+        self._sync_discrete_flow_shift()
 
     def _sync_sigmoid_scale(self) -> None:
-        if self.widget.timestep_sampling_selector.currentText() == "sigmoid":
+        if self.widget.timestep_sampling_selector.currentText() in ("sigmoid", "shift", "flux_shift"):
             self.edit_anima_args("sigmoid_scale", self.widget.sigmoid_scale_input.value())
         elif "sigmoid_scale" in self.anima_args:
             del self.anima_args["sigmoid_scale"]
+
+    def _sync_discrete_flow_shift(self) -> None:
+        if self.widget.timestep_sampling_selector.currentText() in ("sigma", "shift"):
+            self.edit_anima_args("discrete_flow_shift", self.widget.discrete_flow_shift_input.value())
+        elif "discrete_flow_shift" in self.anima_args:
+            del self.anima_args["discrete_flow_shift"]
 
     def _sync_vae_chunk(self) -> None:
         value = self.widget.vae_chunk_size_input.value()
@@ -477,7 +487,6 @@ class GeneralWidget(BaseWidget):
         self.edit_anima_args("qwen3_max_token_length", self.widget.qwen3_max_token_input.value())
         self.edit_anima_args("t5_max_token_length", self.widget.t5_max_token_input.value())
         self.change_timestep_sampling()
-        self.edit_anima_args("discrete_flow_shift", self.widget.discrete_flow_shift_input.value())
         self._sync_vae_chunk()
         self.edit_anima_args(
             "vae_disable_cache", self.widget.vae_disable_cache_enable.isChecked(), optional=True
