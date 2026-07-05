@@ -88,7 +88,7 @@ class SubsetWidget(BaseWidget):
             )
          )
         self.widget.masked_image_input.textChanged.connect(
-            lambda x: self.edit_dataset_args("conditioning_data_dir", x, True)
+            lambda x: self.edit_dataset_args("mask_path", x, True)
         )
         self.widget.masked_image_selector.clicked.connect(
             lambda: self.set_folder_from_dialog(
@@ -236,12 +236,13 @@ class SubsetWidget(BaseWidget):
 
 
     def enable_disable_masked_loss(self, checked: bool) -> None:
-        if "conditioning_data_dir" in self.dataset_args:
-            del self.dataset_args["conditioning_data_dir"]
+        # diffusion-pipe does masked training per directory via [[directory]].mask_path.
+        if "mask_path" in self.dataset_args:
+            del self.dataset_args["mask_path"]
         self.widget.masked_image_input.setEnabled(checked)
         self.widget.masked_image_selector.setEnabled(checked)
         self.edit_dataset_args(
-            "conditioning_data_dir",
+            "mask_path",
             self.widget.masked_image_input.text() if checked else False,
             True,
         )
@@ -370,7 +371,7 @@ class SubsetWidget(BaseWidget):
         )
         
         self.widget.masked_image_input.setText(
-            dataset_args.get("conditioning_data_dir", "")
+            dataset_args.get("mask_path", dataset_args.get("conditioning_data_dir", ""))
         )
         self.widget.repeats_input.setValue(dataset_args.get("num_repeats", 1))
         self.widget.shuffle_captions_enable.setChecked(
@@ -468,7 +469,7 @@ class SubsetWidget(BaseWidget):
             "target_image_dir", self.widget.target_image_folder_input.text(), True
         )
         self.edit_dataset_args(
-            "conditioning_data_dir", self.widget.masked_image_input.text(), True
+            "mask_path", self.widget.masked_image_input.text(), True
         )
         self.edit_dataset_args("num_repeats", self.widget.repeats_input.value())
         self.edit_dataset_args(

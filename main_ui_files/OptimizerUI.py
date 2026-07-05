@@ -31,6 +31,15 @@ class OptimizerWidget(BaseWidget):
     def setup_widget(self) -> None:
         super().setup_widget()
         self.widget.setupUi(self.content)
+
+        # diffusion-pipe supports only constant / linear / cosine schedulers
+        # (plus warmup_steps). The rex / restart / polynomial zoo is gone.
+        self.widget.lr_scheduler_selector.blockSignals(True)
+        self.widget.lr_scheduler_selector.clear()
+        self.widget.lr_scheduler_selector.addItems(["constant", "linear", "cosine"])
+        self.widget.lr_scheduler_selector.setCurrentText("cosine")
+        self.widget.lr_scheduler_selector.blockSignals(False)
+
         self.widget.optimizer_item_widget.layout().setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
         for opt_arg in self.opt_args:
             self.widget.optimizer_item_widget.layout().addWidget(opt_arg)
@@ -170,80 +179,18 @@ class OptimizerWidget(BaseWidget):
 
     @Slot(str)
     def change_scheduler(self, value: str) -> None:
-        value = value.replace(" ", "_")
-        args = [
-            "lr_scheduler_num_cycles",
-            "lr_scheduler_power",
-            "lr_scheduler_type",
-            "lr_scheduler_args",
-        ]
-        for arg in args:
+        value = value.strip().lower()
+        # Drop any legacy custom-scheduler keys; diffusion-pipe ignores them.
+        for arg in ("lr_scheduler_num_cycles", "lr_scheduler_power",
+                    "lr_scheduler_type", "lr_scheduler_args"):
             if arg in self.args:
                 del self.args[arg]
+        # These controls have no diffusion-pipe equivalent.
         self.widget.cosine_restart_input.setEnabled(False)
         self.widget.poly_power_input.setEnabled(False)
         self.widget.min_lr_input.setEnabled(False)
         self.widget.gamma_input.setEnabled(False)
         self.widget.d_param_input.setEnabled(False)
-
-        if value == "cosine_with_restarts":
-            self.widget.cosine_restart_input.setEnabled(True)
-            self.edit_args(
-                "lr_scheduler_num_cycles",
-                self.widget.cosine_restart_input.value(),
-                True,
-            )
-        elif value in {
-            "cosine_annealing_warm_restarts_(CAWR)",
-            "cosine_annealing_warmup_restarts",
-        }:
-            self.widget.cosine_restart_input.setEnabled(True)
-            self.widget.min_lr_input.setEnabled(True)
-            self.widget.gamma_input.setEnabled(True)
-            self.edit_args(
-                "lr_scheduler_type",
-                "LoraEasyCustomOptimizer.CosineAnnealingWarmRestarts.CosineAnnealingWarmRestarts",
-            )
-            self.edit_lr_args("min_lr", self.widget.min_lr_input.text(), True)
-            self.edit_args(
-                "lr_scheduler_num_cycles",
-                self.widget.cosine_restart_input.value(),
-                True,
-            )
-            self.edit_lr_args("gamma", 1 - self.widget.gamma_input.value(), True)
-        elif value in {"rex_annealing_warm_restarts_(RAWR)", "rex"}:
-            self.widget.cosine_restart_input.setEnabled(True)
-            self.widget.min_lr_input.setEnabled(True)
-            self.widget.gamma_input.setEnabled(True)
-            self.widget.d_param_input.setEnabled(True)
-            self.edit_args(
-                "lr_scheduler_type",
-                "LoraEasyCustomOptimizer.RexAnnealingWarmRestarts.RexAnnealingWarmRestarts",
-            )
-            self.edit_lr_args("min_lr", self.widget.min_lr_input.text(), True)
-            self.edit_args(
-                "lr_scheduler_num_cycles",
-                self.widget.cosine_restart_input.value(),
-                True,
-            )
-            self.edit_lr_args("gamma", 1 - self.widget.gamma_input.value(), True)
-            self.edit_lr_args("d", self.widget.d_param_input.value(), True)
-        elif value == "polynomial":
-            self.widget.poly_power_input.setEnabled(True)
-            self.edit_args("lr_scheduler_power", self.widget.poly_power_input.value(), True)
-        elif value in {"warmup_stable_decay", "wsd"}:
-            self.widget.cosine_restart_input.setEnabled(True)
-            self.edit_args(
-                "lr_scheduler_num_cycles",
-                self.widget.cosine_restart_input.value(),
-                True,
-            )
-        elif value in {
-            "CosineAnnealingLR",
-            "cosineannealinglr",
-        }:
-            self.widget.min_lr_input.setEnabled(True)
-            self.edit_lr_args("min_lr", self.widget.min_lr_input.text(), True)
         self.edit_args("lr_scheduler", value)
 
     def change_loss_type(self, value: str) -> None:

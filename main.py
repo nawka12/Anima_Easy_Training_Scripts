@@ -13,10 +13,11 @@ import time
 
 
 def run_backend():
+    # diffusion-pipe uses a backend-level venv (DeepSpeed is Linux-only).
     if sys.platform == "linux":
-        python = Path("backend/sd_scripts/venv/bin/python")
+        python = Path("backend/venv/bin/python")
     else:
-        python = Path("backend/sd_scripts/venv/Scripts/python.exe")
+        python = Path("backend/venv/Scripts/python.exe")
     with contextlib.suppress(Exception):
         subprocess.check_call(
             f"{python} backend/main.py backend", shell=sys.platform == "linux"
@@ -63,7 +64,7 @@ def main() -> None:
         )
 
     window = MainWindow(app)
-    window.setWindowTitle("LoRA Trainer - 67372a Fork - Refresh Branch")
+    window.setWindowTitle("Anima Easy Training Scripts - diffusion-pipe backend")
     window.show()
     app.exec()
     config_dict = json.loads(config.read_text())

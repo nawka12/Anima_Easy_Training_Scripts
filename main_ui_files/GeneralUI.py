@@ -64,6 +64,13 @@ class GeneralWidget(BaseWidget):
         super().setup_widget()
         self.widget.setupUi(self.content)
 
+        # diffusion-pipe's Anima only supports these two timestep sample methods.
+        self.widget.timestep_sampling_selector.blockSignals(True)
+        self.widget.timestep_sampling_selector.clear()
+        self.widget.timestep_sampling_selector.addItems(["logit_normal", "uniform"])
+        self.widget.timestep_sampling_selector.setCurrentText("logit_normal")
+        self.widget.timestep_sampling_selector.blockSignals(False)
+
         more_icon = QIcon(str(Path("icons/more-horizontal.svg")))
 
         def setup_file(elem: DragDropLineEdit, selector: QPushButton, exts: list[str], allow_empty: bool = False):
@@ -348,23 +355,22 @@ class GeneralWidget(BaseWidget):
     def change_timestep_sampling(self, _text: str = "") -> None:
         sampling_type = self.widget.timestep_sampling_selector.currentText()
         self.edit_anima_args("timestep_sampling", sampling_type)
-        # sigmoid, shift, and flux_shift all use sigmoid_scale to control concentration
-        self.widget.sigmoid_scale_input.setEnabled(sampling_type in ("sigmoid", "shift", "flux_shift"))
-        # sigma uses discrete_flow_shift via the scheduler table; shift applies it directly
-        self.widget.discrete_flow_shift_input.setEnabled(sampling_type in ("sigma", "shift"))
+        # sigmoid_scale scales the logit-normal distribution; N/A for uniform.
+        self.widget.sigmoid_scale_input.setEnabled(sampling_type == "logit_normal")
+        self.widget.discrete_flow_shift_input.setEnabled(False)
         self._sync_sigmoid_scale()
         self._sync_discrete_flow_shift()
 
     def _sync_sigmoid_scale(self) -> None:
-        if self.widget.timestep_sampling_selector.currentText() in ("sigmoid", "shift", "flux_shift"):
+        if self.widget.timestep_sampling_selector.currentText() == "logit_normal":
             self.edit_anima_args("sigmoid_scale", self.widget.sigmoid_scale_input.value())
         elif "sigmoid_scale" in self.anima_args:
             del self.anima_args["sigmoid_scale"]
 
     def _sync_discrete_flow_shift(self) -> None:
-        if self.widget.timestep_sampling_selector.currentText() in ("sigma", "shift"):
-            self.edit_anima_args("discrete_flow_shift", self.widget.discrete_flow_shift_input.value())
-        elif "discrete_flow_shift" in self.anima_args:
+        # diffusion-pipe's Anima has no discrete_flow_shift knob (it uses
+        # shift / flux_shift instead); drop the legacy key.
+        if "discrete_flow_shift" in self.anima_args:
             del self.anima_args["discrete_flow_shift"]
 
     def _sync_vae_chunk(self) -> None:
@@ -375,11 +381,11 @@ class GeneralWidget(BaseWidget):
             del self.anima_args["vae_chunk_size"]
 
     def _sync_blocks_to_swap(self) -> None:
-        value = self.widget.blocks_to_swap_input.value()
-        if value > 0:
-            self.edit_anima_args("blocks_to_swap", value)
-        elif "blocks_to_swap" in self.anima_args:
+        # blocks_to_swap is a top-level diffusion-pipe key, so it lives in
+        # general_args, not [model]. 0 = disabled (omitted).
+        if "blocks_to_swap" in self.anima_args:
             del self.anima_args["blocks_to_swap"]
+        self.edit_args("blocks_to_swap", self.widget.blocks_to_swap_input.value(), optional=True)
 
     def _sync_flash_attn(self) -> None:
         if self.widget.flash_attn_enable.isChecked():
@@ -393,13 +399,17 @@ class GeneralWidget(BaseWidget):
         )
 
     def _sync_contrastive_flow_matching(self) -> None:
+        # diffusion-pipe exposes contrastive flow matching as a single
+        # [model].contrastive_flow_lambda float (0 = off).
         enabled = self.widget.contrastive_flow_matching_enable.isChecked()
         self.widget.cfm_lambda_input.setEnabled(enabled)
-        self.edit_anima_args("contrastive_flow_matching", enabled, optional=True)
+        for legacy in ("contrastive_flow_matching", "cfm_lambda"):
+            if legacy in self.anima_args:
+                del self.anima_args[legacy]
         if enabled:
-            self.edit_anima_args("cfm_lambda", self.widget.cfm_lambda_input.value())
-        elif "cfm_lambda" in self.anima_args:
-            del self.anima_args["cfm_lambda"]
+            self.edit_anima_args("contrastive_flow_lambda", self.widget.cfm_lambda_input.value())
+        elif "contrastive_flow_lambda" in self.anima_args:
+            del self.anima_args["contrastive_flow_lambda"]
 
     # ---------------- load/save ----------------
 
@@ -450,18 +460,20 @@ class GeneralWidget(BaseWidget):
         self.widget.t5_tokenizer_input.setText(pick("t5_tokenizer_path", ""))
         self.widget.qwen3_max_token_input.setValue(pick("qwen3_max_token_length", 512))
         self.widget.t5_max_token_input.setValue(pick("t5_max_token_length", 512))
-        self.widget.timestep_sampling_selector.setCurrentText(pick("timestep_sampling", "sigmoid"))
+        self.widget.timestep_sampling_selector.setCurrentText(pick("timestep_sampling", "logit_normal"))
         self.widget.discrete_flow_shift_input.setValue(pick("discrete_flow_shift", 3.0))
         self.widget.sigmoid_scale_input.setValue(pick("sigmoid_scale", 1.0))
         self.widget.vae_chunk_size_input.setValue(pick("vae_chunk_size", 0))
         self.widget.vae_disable_cache_enable.setChecked(pick("vae_disable_cache", False))
-        self.widget.blocks_to_swap_input.setValue(pick("blocks_to_swap", 0))
+        # blocks_to_swap moved to general_args (top-level dp key); fall back to legacy anima key.
+        self.widget.blocks_to_swap_input.setValue(general.get("blocks_to_swap", pick("blocks_to_swap", 0)))
         self.widget.flash_attn_enable.setChecked(pick("attn_mode", "") == "flash")
         self.widget.split_attn_enable.setChecked(pick("split_attn", False))
         self.widget.unsloth_offload_checkpointing.setChecked(pick("unsloth_offload_checkpointing", False))
         self.widget.flow_use_ot_enable.setChecked(pick("flow_use_ot", True))
-        self.widget.contrastive_flow_matching_enable.setChecked(pick("contrastive_flow_matching", False))
-        self.widget.cfm_lambda_input.setValue(pick("cfm_lambda", 0.02))
+        cfm_lambda = pick("contrastive_flow_lambda", pick("cfm_lambda", 0.0))
+        self.widget.contrastive_flow_matching_enable.setChecked(bool(cfm_lambda))
+        self.widget.cfm_lambda_input.setValue(cfm_lambda or 0.02)
 
         # Re-sync internal args dicts
         self.change_full_type(self.widget.FP16_enable.isChecked(), self.widget.BF16_enable.isChecked())

@@ -63,9 +63,6 @@ class ArgsWidget(QtWidgets.QWidget):
         self.args_widget_array.append(self.accelerate_widget)
         self.args_widget_array.append(ExtraArgsWidget())
 
-        # Anima trains text encoders, so cache_text_encoder_outputs is available.
-        self.network_widget.toggle_sdxl(True)
-
         for widget in self.args_widget_array:
             widget.setVisible(True)
             self.scroll_widget.layout().addWidget(widget)

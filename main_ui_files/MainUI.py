@@ -17,6 +17,7 @@ from main_ui_files.QueueUI import QueueWidget
 from main_ui_files.SubsetListUI import SubsetListWidget
 from modules import ScrollOnSelect, TomlFunctions
 from modules.LineEditHighlight import LineEditWithHighlight
+from tools.convert_sdscripts_toml import convert as convert_old_toml, is_old_format
 
 
 class MainWidget(QWidget):
@@ -144,6 +145,14 @@ class MainWidget(QWidget):
         self.args_widget.load_args(args, dataset_args)
         self.subset_widget.load_dataset_args(dataset_args)
         self.args_widget.additional_resolutions_widget.load_extra_datasets(extra_datasets)
+        if getattr(self, "_conversion_warnings", None):
+            report = "\n".join(f"• {w}" for w in self._conversion_warnings)
+            self.training_warning.emit(
+                "Converted old (sd_scripts) config",
+                "This config used the old sd_scripts format and was converted to "
+                "diffusion-pipe. The following settings were dropped or remapped:\n\n"
+                f"{report}",
+            )
 
     def process_toml(
         self, file_name: Path | None = None
@@ -151,6 +160,18 @@ class MainWidget(QWidget):
         loaded_args = TomlFunctions.load_toml(file_name)
         if not loaded_args:
             return {}, {}, []
+
+        # Old sd_scripts-vocabulary configs won't load into the diffusion-pipe
+        # widgets faithfully; auto-convert and remember the dropped-args report.
+        self._conversion_warnings = []
+        if is_old_format(loaded_args):
+            loaded_args, self._conversion_warnings = convert_old_toml(loaded_args)
+            print(
+                f"Converted old sd_scripts TOML "
+                f"({len(self._conversion_warnings)} args dropped/remapped):"
+            )
+            for warning in self._conversion_warnings:
+                print(f"  - {warning}")
         args: dict = {}
         dataset_args: dict = {}
         extra_datasets: list[dict] = []
@@ -245,17 +266,18 @@ class MainWidget(QWidget):
         config = json.loads(Path("config.json").read_text())
 
         if extra_datasets:
-            # Multi-resolution: post the {"datasets": [{<groups>, "subsets": [...]}, ...]}
-            # shape the backend understands. Subsets are shared across resolutions.
-            subsets_list = dataset_args.get("subsets", [])
-            first_dataset = dict(dataset_args)
-            payload_datasets = [first_dataset]
+            # diffusion-pipe does multi-resolution natively via a list-valued
+            # resolutions field (the dataset is duplicated across areas), so we
+            # collapse the old multi-[[datasets]] shape into
+            # dataset.general_args.resolutions = [base, extra1, extra2, ...].
+            base = dataset_args.setdefault("general_args", {})
+            base_res = base.pop("resolution", base.get("resolutions", 1024))
+            resolutions = base_res if isinstance(base_res, list) else [base_res]
             for extra in extra_datasets:
-                payload_datasets.append({
-                    "general_args": dict(extra),
-                    "subsets": subsets_list,
-                })
-            dataset_args = {"datasets": payload_datasets}
+                res = extra.get("resolution", extra.get("resolutions"))
+                if res is not None:
+                    resolutions.append(res)
+            base["resolutions"] = resolutions
 
         final_args = {
             "args": args,
@@ -292,14 +314,9 @@ class MainWidget(QWidget):
             )
         os.remove(train_toml)
 
-        # Anima is the only supported training mode.
-        train_params = {
-            "train_mode": "lora",
-            "sdxl": "False",
-            "flux": "False",
-            "anima": "True",
-        }
-
+        # The backend reads the adapter type (LoRA / LoKr / full fine-tune) from
+        # the validated config, so /train only needs the GPU count + master port.
+        train_params: dict[str, str] = {}
         accel = config.get("accelerate", {})
         if accel.get("enabled", False):
             train_params["accelerate_enabled"] = "True"

@@ -1,6 +1,6 @@
 import subprocess
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QMainWindow, QApplication
+from PySide6.QtWidgets import QMainWindow, QApplication, QMessageBox
 from qt_material import QtStyleTools, apply_stylesheet
 from ui_files.MainUI import Ui_MainWindow
 from main_ui_files.MainUI import MainWidget
@@ -102,14 +102,19 @@ class MainWindow(QMainWindow, QtStyleTools):
                 print("Stopped previous TensorBoard instance")
                 return
 
-            # Get the logging directory from args
+            # diffusion-pipe writes TensorBoard events into a timestamped run dir
+            # inside output_dir, so point TensorBoard at output_dir (it recurses).
+            # Fall back to logging_dir for backwards compatibility.
             args = self.main_widget.args_widget.get_args()
-            log_dir = args["args"]["logging_args"].get("logging_dir")
-                
+            log_dir = (
+                args["args"].get("saving_args", {}).get("output_dir")
+                or args["args"].get("logging_args", {}).get("logging_dir")
+            )
+
             if not log_dir:
-                print("No logging directory specified. Please set --logging_dir in training arguments")
+                print("No output directory specified. Please set the Output Folder in Saving Args")
                 return
-                
+
             print(f"Using log directory: {log_dir}")
 
             import subprocess
@@ -120,9 +125,9 @@ class MainWindow(QMainWindow, QtStyleTools):
             root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Go up two levels from main_ui_files
 
             if PLATFORM == 'windows':
-                tensorboard_exe = os.path.join(root_dir, "backend", "sd_scripts", "venv", "Scripts", "tensorboard.exe")
+                tensorboard_exe = os.path.join(root_dir, "backend", "venv", "Scripts", "tensorboard.exe")
             else:
-                tensorboard_exe = os.path.join(root_dir, "backend", "sd_scripts", "venv", "bin", "tensorboard")
+                tensorboard_exe = os.path.join(root_dir, "backend", "venv", "bin", "tensorboard")
 
             print(f"Looking for TensorBoard at: {tensorboard_exe}")
             if not os.path.exists(tensorboard_exe):
@@ -235,6 +240,13 @@ class MainWindow(QMainWindow, QtStyleTools):
         config.write_text(json.dumps(config_dict, indent=2))
 
     def run_resize(self):
-        popup = LoraResizePopup(self)
-        popup.setModal(True)
-        popup.exec()
+        # diffusion-pipe saves Anima LoRA/LoKr in ComfyUI/LyCORIS (or PEFT) format,
+        # which the sd_scripts-based resize_lora.py cannot process. The resize
+        # feature is disabled for the diffusion-pipe backend.
+        QMessageBox.information(
+            self,
+            "Resize Unavailable",
+            "LoRA resize is not supported with the diffusion-pipe backend.\n\n"
+            "Anima LoRA/LoKr files are saved in ComfyUI/LyCORIS format, which the "
+            "resize tool (built for kohya/sd_scripts LoRAs) cannot process.",
+        )

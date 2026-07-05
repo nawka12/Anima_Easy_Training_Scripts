@@ -1,22 +1,39 @@
 # Anima Easy Training Scripts
 
-A PySide6 trainer UI focused on producing LoRAs for the **Anima** model — a DiT with a Qwen3 + T5 text encoder pair and the Qwen-Image VAE.
+A PySide6 trainer UI focused on producing LoRAs for the **Anima** model — a DiT with a Qwen3 text encoder and the Qwen-Image VAE.
 
-This is a fork of [67372a/LoRA_Easy_Training_Scripts](https://github.com/67372a/LoRA_Easy_Training_Scripts) (which itself descends from derrian-distro's original). The upstream project supports the full SD1.x / SD2.x / SDXL / Flux family and Textual Inversion; this fork strips all of that out so the UI only exposes the controls Anima actually uses.
+This is a fork of [67372a/LoRA_Easy_Training_Scripts](https://github.com/67372a/LoRA_Easy_Training_Scripts). The UI keeps the familiar layout, but the **training backend has been replaced**: instead of a kohya/sd_scripts fork, it now drives [**Raelina-Rae/diffusion-pipe**](https://github.com/Raelina-Rae/diffusion-pipe), a DeepSpeed-based framework with first-class Anima support (LoRA, LoKr, and full fine-tune, plus in-training sampling and contrastive flow matching).
 
 If you want a general-purpose LoRA trainer, use the upstream. Use this one when Anima is what you're training.
 
+> **⚠️ Linux only.** diffusion-pipe runs on DeepSpeed, which does not run natively on Windows. Train on Linux (or WSL2 with a working CUDA setup). The `.bat` launchers are left in place but are **not supported** for the diffusion-pipe backend.
+
+> **⚠️ Preview weights.** Anima is still training. A LoRA trained against the current **preview** weights may not transfer to the final release — treat preview LoRAs as throwaway and plan to retrain. If you upload one, say it was trained on preview.
+
 ## What's different from upstream
 
-- General Args is rewritten around Anima: **DiT model**, **Qwen3**, **VAE**, **T5 tokenizer** (optional) are the four model inputs. SDXL / V2 / V-param / V-pred / FP8 / clip_skip / CLIP max_token_length are gone.
-- New **Anima Sampling** section: `timestep_sampling` (sigma / uniform / sigmoid / shift / flux_shift), `discrete_flow_shift`, `sigmoid_scale`, Qwen3 / T5 max token lengths.
-- New **Anima Memory / Attention** section: `vae_chunk_size`, `blocks_to_swap`, `vae_disable_cache`, `flash_attn`, `split_attn`, `unsloth_offload_checkpointing`. xFormers automatically locks `split_attn` on.
-- New **Anima Flow Matching** section: `flow_use_ot` (cosine optimal-transport noise pairing, on by default), `contrastive_flow_matching` (ΔFM), and `cfm_lambda` (ΔFM weight, Anima default 0.02 — input is enabled only when ΔFM is on).
-- New **Additional Resolutions** widget supports sd-scripts' multi-resolution `[[datasets]]` shape — add a row per extra resolution (each with its own `skip_image_resolution`, `batch_size`, bucket settings) and save round-trips the multi-`[[datasets]]` toml.
-- Flux, EDM² loss weighting, NoiseOffset, and Textual Inversion widgets are removed, along with the rest of ExperimentalArgs (debiased estimation, etc.); only its Anima-relevant flow-matching controls were kept (see above).
-- Train Mode menu is removed; the backend is always invoked with `anima=True` → `anima_train_network.py`.
+The frontend↔backend HTTP contract is unchanged, but the argument vocabulary and everything downstream of it were rewritten for diffusion-pipe:
 
-Everything else from upstream (network args, optimizer args, queue, sampling, logging, accelerate, custom optimizers via `LoraEasyCustomOptimizer`, etc.) is unchanged.
+- **Adapters:** the Network panel offers **LoRA**, **LoKr**, or **Full fine-tune** (omitting the adapter). The LyCORIS algo zoo, block weights, DoRA, LoRA-FA, and `network_alpha` are gone — diffusion-pipe forces `alpha = rank`. LoKr exposes `factor`, `use_tucker`, and rank/module dropout.
+- **Model inputs:** **DiT model** (`transformer_path`), **Qwen3** (`llm_path`), **VAE** (`vae_path`). The T5 tokenizer path and token-length knobs are gone (dp's Anima is Qwen3-only).
+- **Timestep sampling:** `logit_normal` or `uniform` only, with `sigmoid_scale`. Contrastive flow matching is a single `contrastive_flow_lambda`.
+- **Optimizer / scheduler:** optimizer names map to dp equivalents (`AdamW`→`adamw_optimi`, `AdamW8bit`→`AdamW8bitKahan`, …) with a free-text escape hatch to the `pytorch_optimizer` library. Schedulers collapse to **constant / linear / cosine** + warmup. The rex/restart/custom-scheduler zoo, min-SNR, noise-offset, and other epsilon-prediction knobs are removed (Anima is flow matching).
+- **Bucketing:** aspect-ratio buckets (`enable_ar_bucket`, `num_ar_buckets`) instead of resolution-step buckets. Multi-resolution is a single list — see below.
+- **Sampling:** the Sample panel is a prompt list with **per-prompt negative prompts** plus width/height/steps/CFG/seed, written to dp's `sample.toml`.
+- **Masked training:** per-directory, via a mask folder on each subset (`mask_path`).
+- **New knobs:** `blocks_to_swap` (low-VRAM), `pipeline_stages`, `compile`, `llm_adapter_lr`, `caching_batch_size`.
+
+**Gained vs. the old backend:** full fine-tune, LoKr, in-training sampling with negatives, contrastive flow matching, native multi-resolution, per-directory masks, pipeline parallelism + block swap.
+
+**Lost:** the LyCORIS algo zoo beyond LoKr, block weights, custom LR schedulers, regularization images, per-subset caption/augmentation knobs, and native Windows.
+
+### Old configs
+
+Configs saved with the old sd_scripts backend load fine — the UI auto-detects the old format, converts it, and pops up a report of every dropped or remapped setting. You can also convert offline:
+
+```bash
+python tools/convert_sdscripts_toml.py old_config.toml [new_config.toml]
+```
 
 ## Installation
 
@@ -25,132 +42,103 @@ Everything else from upstream (network args, optimizer args, queue, sampling, lo
 ```bash
 git clone --recurse-submodules https://github.com/nawka12/Anima_Easy_Training_Scripts.git -b refresh
 cd Anima_Easy_Training_Scripts
-git submodule update --init --recursive
+git submodule update --init backend
 ./install311.sh
 ```
 
-If `install311.sh` doesn't work for your environment, fall back to the manual recipe from [upstream's README](https://github.com/67372a/LoRA_Easy_Training_Scripts#linux) — the dependency setup is identical, only the model surface changes.
+The backend installer pulls the `diffusion_pipe` submodule (not its heavy sub-submodules — Anima doesn't need them), creates a backend-level venv at `backend/venv`, and installs DeepSpeed + diffusion-pipe's requirements. This needs a working CUDA toolchain.
+
+When the installer asks "Are you using this locally? (y/n):" answer `y` if you're training on this machine. Otherwise the backend won't install.
 
 ### Windows
 
-```
-git clone https://github.com/nawka12/Anima_Easy_Training_Scripts.git -b refresh
-cd Anima_Easy_Training_Scripts
-install.bat
-```
-
-When the installer asks "Are you using this locally? (y/n):" answer `y` if you're training on this machine. Otherwise the backend won't install.
+Not supported — DeepSpeed does not run natively on Windows. Use **WSL2** with a CUDA-enabled setup and follow the Linux instructions inside it.
 
 ## Running
 
 ```bash
 ./run.sh           # Linux
-run.bat            # Windows
 ```
 
 The UI launches the backend in the background and the args UI in the foreground. Point it at your Anima DiT + Qwen3 + VAE, fill in your datasets, hit **Start Training**.
 
+> On the first run, diffusion-pipe pre-caches latents and text embeddings before training starts, so the first epoch is slow to begin. Trained files land in a timestamped run directory inside your **Output Folder** (which is also where TensorBoard should point).
+
 ## TOML format
 
-Configs are sectioned by widget. Anima-specific keys live under `[anima_args.args]`. The simplest single-resolution config looks like this:
+Saved configs are still sectioned by widget (`[group.args]` / `[group.dataset_args]`), but the keys inside now use the diffusion-pipe vocabulary. At training time the backend translates these into diffusion-pipe's three config files (`main.toml`, `dataset.toml`, `sample.toml`). A simple single-resolution LoKr config:
 
 ```toml
 [[subsets]]
-caption_extension = ".txt"
 image_dir = "/path/to/dataset"
 num_repeats = 1
 name = "concept"
+# mask_path = "/path/to/masks"   # optional, per-directory masked training
 
 [general_args.args]
-seed = 42
 mixed_precision = "bf16"
 gradient_checkpointing = true
 max_train_epochs = 10
-cache_latents = true
-cache_latents_to_disk = true
-sdpa = true
+# blocks_to_swap = 20            # optional, lowers VRAM
 
 [general_args.dataset_args]
 resolution = 1024
 batch_size = 4
 
 [bucket_args.dataset_args]
-enable_bucket = true
-min_bucket_reso = 512
-max_bucket_reso = 1536
-bucket_reso_steps = 64
+enable_ar_bucket = true
+num_ar_buckets = 7
 
 [anima_args.args]
 pretrained_model_name_or_path = "/path/to/anima_dit.safetensors"
 qwen3 = "/path/to/qwen3_0.6b.safetensors"
 vae = "/path/to/qwen_image_vae.safetensors"
-qwen3_max_token_length = 512
-t5_max_token_length = 512
-timestep_sampling = "sigmoid"
-discrete_flow_shift = 3.0
+timestep_sampling = "logit_normal"
 sigmoid_scale = 1.0
-attn_mode = "flash"
-flow_use_ot = true
-# contrastive_flow_matching = true   # optional ΔFM objective
-# cfm_lambda = 0.02                   # ΔFM weight (only used when the line above is set)
+llm_adapter_lr = 0            # 0 freezes the Qwen3→DiT adapter (more stable on small sets)
+# contrastive_flow_lambda = 0.05   # optional contrastive flow matching
 
 [network_args.args]
-network_dim = 32
-network_alpha = 16
+type = "lokr"                 # "lora" | "lokr" | "none" (full fine-tune)
+rank = 8
+factor = 4
+# note: no alpha — diffusion-pipe forces alpha = rank
 
 [optimizer_args.args]
-optimizer_type = "AdamW"
-lr_scheduler = "cosine"
-learning_rate = 1e-4
+optimizer_type = "AdamW"      # mapped to adamw_optimi
+lr_scheduler = "cosine"       # constant | linear | cosine
+learning_rate = 2e-5
 
 [saving_args.args]
 output_dir = "/path/to/output"
 save_precision = "bf16"
-save_model_as = "safetensors"
 output_name = "my_anima_lora"
 save_every_n_epochs = 1
+
+[sample_args.args]
+sample_every_n_epochs = 1
+sample_at_first = true
+width = 1024
+height = 1024
+num_inference_steps = 32
+guidance_scale = 4.0
+seed = 42
+prompts = [
+  { prompt = "1girl, solo, masterpiece", negative_prompt = "worst quality, low quality" },
+]
 ```
+
+For a **full fine-tune**, set `type = "none"` (the adapter is omitted). For a plain **LoRA**, use `type = "lora"` with just a `rank`.
 
 ### Multi-resolution training
 
-To train at multiple resolutions simultaneously, add rows under **Additional Resolutions (Mixed-Res)** in the UI. The toml is then saved using sd-scripts' `[[datasets]]` shape:
-
-```toml
-[[datasets]]
-resolution = 512
-batch_size = 8
-enable_bucket = true
-min_bucket_reso = 512
-max_bucket_reso = 1536
-bucket_reso_steps = 64
-
-  [[datasets.subsets]]
-  caption_extension = ".txt"
-  image_dir = "/path/to/dataset"
-  num_repeats = 1
-
-[[datasets]]
-resolution = 1024
-skip_image_resolution = 512   # skip images smaller than 512 for this bucket
-batch_size = 8
-enable_bucket = true
-min_bucket_reso = 512
-max_bucket_reso = 1536
-bucket_reso_steps = 64
-
-  [[datasets.subsets]]
-  caption_extension = ".txt"
-  image_dir = "/path/to/dataset"
-  num_repeats = 1
-```
-
-The first `[[datasets]]` block is built from your General Args + Bucket Args + subset list; each additional resolution row in the UI becomes another block. All blocks share the same subset list. Loading a multi-resolution toml back into the UI restores the rows automatically.
+diffusion-pipe trains multiple resolutions natively: the dataset is duplicated across each area in a `resolutions` list. Add rows under **Additional Resolutions (Mixed-Res)** in the UI; at training time they collapse into a single list, e.g. `resolutions = [768, 1024]`. No per-block bucket configuration is needed.
 
 ## Credit
 
-- [67372a/LoRA_Easy_Training_Scripts](https://github.com/67372a/LoRA_Easy_Training_Scripts) — direct parent of this fork. Maintains the broader trainer, the extended `LoraEasyCustomOptimizer` set, RamTorch integration, and the backend.
+- [Raelina-Rae/diffusion-pipe](https://github.com/Raelina-Rae/diffusion-pipe) — the training backend (a fork of tdrussell/diffusion-pipe with Anima support).
+- [67372a/LoRA_Easy_Training_Scripts](https://github.com/67372a/LoRA_Easy_Training_Scripts) — direct parent of this fork; source of the PySide6 UI.
 - [derrian-distro/LoRA_Easy_Training_Scripts](https://github.com/derrian-distro/LoRA_Easy_Training_Scripts) — original project the upstream descends from.
-- [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) — the training scripts at the bottom of the stack.
 - [qt-material](https://github.com/UN-GCPDS/qt-material) — UI theming.
 
-The Anima training script (`anima_train_network.py`) lives in the bundled `sd_scripts` submodule.
+Training is run by diffusion-pipe's `train.py`, launched via DeepSpeed from the bundled `diffusion_pipe` submodule in the backend.

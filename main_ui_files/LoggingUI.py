@@ -69,11 +69,11 @@ class LoggingWidget(BaseWidget):
         # Tracker Name Connection
         self.widget.log_tracker_name_enable.clicked.connect(
             lambda x: self.enable_disable_lineEdit(
-                x, self.widget.log_tracker_name_input, "log_tracker_name"
+                x, self.widget.log_tracker_name_input, "wandb_tracker_name"
             )
         )
         self.widget.log_tracker_name_input.textChanged.connect(
-            lambda x: self.edit_args("log_tracker_name", x, True)
+            lambda x: self.edit_args("wandb_tracker_name", x, True)
         )
         # Wandb Key Connection
         self.widget.log_wandb_key_input.textChanged.connect(
@@ -113,7 +113,7 @@ class LoggingWidget(BaseWidget):
         # Apply tracker name logic
         if self.widget.log_tracker_name_enable.isChecked():
             self.enable_disable_lineEdit(
-                True, self.widget.log_tracker_name_input, "log_tracker_name"
+                True, self.widget.log_tracker_name_input, "wandb_tracker_name"
             )
         # Apply log system logic (handles wandb key)
         self.change_log_system(self.widget.log_mode_selector.currentIndex())
@@ -158,8 +158,8 @@ class LoggingWidget(BaseWidget):
         self.widget.run_name_input.setEnabled(is_manual_mode)
 
         # Clear run_name arg if not in manual mode
-        if "run_name" in self.args and not is_manual_mode:
-            del self.args["run_name"]
+        if "wandb_run_name" in self.args and not is_manual_mode:
+            del self.args["wandb_run_name"]
         # If switching to manual, add the current input value to args
         elif is_manual_mode:
             self.update_manual_run_name(self.widget.run_name_input.text())
@@ -169,17 +169,20 @@ class LoggingWidget(BaseWidget):
         """Updates the run_name arg only if the mode is Manual."""
         if not self.widget.logging_group.isChecked(): return # Ignore if group disabled
         if self.widget.run_name_mode_selector.currentText() == "Manual":
-            self.edit_args("run_name", text, True)
+            self.edit_args("wandb_run_name", text, True)
         # If mode is not Manual but text changes (e.g., user typed then changed mode),
         # ensure run_name is not in args (handled by change_run_name_mode)
 
 
     def change_log_system(self, index: int) -> None:
         if not self.widget.logging_group.isChecked(): return # Ignore if group disabled
-        if "wandb_api_key" in self.args:
-            del self.args["wandb_api_key"]
+        for key in ("wandb_api_key", "enable_wandb"):
+            if key in self.args:
+                del self.args[key]
         is_wandb_or_all = (index != 0) # 0 = Tensorboard, 1 = Wandb, 2 = All
         self.widget.log_wandb_key_input.setEnabled(is_wandb_or_all)
+        # diffusion-pipe [monitoring] only knows wandb; TensorBoard is always on.
+        self.edit_args("enable_wandb", is_wandb_or_all, True)
         self.edit_args(
             "wandb_api_key",
             self.widget.log_wandb_key_input.text() if is_wandb_or_all else None,
@@ -218,11 +221,13 @@ class LoggingWidget(BaseWidget):
         self.widget.run_name_mode_selector.setCurrentText(
             args_logging.get("run_name_mode", "default").replace("_", " ").title()
         )
-        self.widget.run_name_input.setText(args_logging.get("run_name", ""))
+        self.widget.run_name_input.setText(
+            args_logging.get("wandb_run_name", args_logging.get("run_name", ""))
+        )
 
         # Load Tracker Name
-        self.widget.log_tracker_name_enable.setChecked("log_tracker_name" in args_logging)
-        self.widget.log_tracker_name_input.setText(args_logging.get("log_tracker_name", ""))
+        self.widget.log_tracker_name_enable.setChecked("wandb_tracker_name" in args_logging)
+        self.widget.log_tracker_name_input.setText(args_logging.get("wandb_tracker_name", ""))
 
         # Load Wandb Key
         self.widget.log_wandb_key_input.setText(args_logging.get("wandb_api_key", ""))

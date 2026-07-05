@@ -4,9 +4,21 @@ from modules.BaseWidget import BaseWidget
 
 
 class BucketWidget(BaseWidget):
+    """Aspect-ratio bucketing for diffusion-pipe.
+
+    diffusion-pipe buckets by aspect ratio around fixed pixel areas, not by
+    resolution steps like sd_scripts. This widget emits::
+
+        enable_ar_bucket, num_ar_buckets   (min_ar / max_ar keep dp defaults)
+
+    reusing the old reso-bucket controls: the group toggle -> enable_ar_bucket
+    and the "steps" spinbox -> num_ar_buckets. The reso-specific controls are
+    hidden (they have no aspect-ratio equivalent).
+    """
+
     def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
-        self.colap.set_title("Bucket Args")
+        self.colap.set_title("Bucket Args (Aspect Ratio)")
         self.widget = Ui_bucket_ui()
 
         self.name = "bucket_args"
@@ -18,67 +30,52 @@ class BucketWidget(BaseWidget):
     def setup_widget(self) -> None:
         super().setup_widget()
         self.widget.setupUi(self.content)
-        # Populate dataset_args with initial widget values
+
+        # Repurpose the "steps" spinbox as the aspect-ratio bucket count.
+        self.widget.steps_input.setMinimum(1)
+        self.widget.steps_input.setMaximum(64)
+        self.widget.steps_input.setSingleStep(1)
+        self.widget.steps_input.setValue(7)
+        self.widget.steps_input.setToolTip(
+            "num_ar_buckets: number of aspect-ratio buckets, evenly spaced in log "
+            "space between min_ar (0.5) and max_ar (2.0)."
+        )
+
+        # Hide the resolution-step controls that don't map to AR bucketing.
+        for name in ("min_input", "max_input", "bucket_no_upscale", "multires_training"):
+            elem = getattr(self.widget, name, None)
+            if elem is not None:
+                elem.hide()
+        for name in ("min_label", "max_label", "min_bucket_label", "max_bucket_label"):
+            elem = getattr(self.widget, name, None)
+            if elem is not None:
+                elem.hide()
+
         self.enable_disable(self.widget.bucket_group.isChecked())
 
     def setup_connections(self) -> None:
-        self.widget.bucket_no_upscale.clicked.connect(self.handle_no_upscale_clicked)
-        self.widget.multires_training.clicked.connect(self.handle_multires_training_clicked)
-        self.widget.min_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("min_bucket_reso", x)
-        )
-        self.widget.max_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("max_bucket_reso", x)
-        )
         self.widget.steps_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("bucket_reso_steps", x)
+            lambda x: self.edit_dataset_args("num_ar_buckets", x)
         )
         self.widget.bucket_group.clicked.connect(self.enable_disable)
-
-    def handle_no_upscale_clicked(self, checked: bool) -> None:
-        self.edit_dataset_args("bucket_no_upscale", checked, True)
-        if checked:
-            self.widget.multires_training.setChecked(False)
-            self.edit_dataset_args("multires_training", False, True)
-
-    def handle_multires_training_clicked(self, checked: bool) -> None:
-        self.edit_dataset_args("multires_training", checked, True)
-        if checked:
-            self.widget.bucket_no_upscale.setChecked(False)
-            self.edit_dataset_args("bucket_no_upscale", False, True)
 
     def enable_disable(self, checked: bool) -> None:
         self.dataset_args = {}
         if not checked:
-            self.edit_dataset_args("enable_bucket", False)
+            self.edit_dataset_args("enable_ar_bucket", False)
             return
-        self.edit_dataset_args("enable_bucket", True)
-        self.edit_dataset_args(
-            "bucket_no_upscale", self.widget.bucket_no_upscale.isChecked(), True
-        )
-        self.edit_dataset_args(
-            "multires_training", self.widget.multires_training.isChecked(), True
-        )
-        self.edit_dataset_args("min_bucket_reso", self.widget.min_input.value())
-        self.edit_dataset_args("max_bucket_reso", self.widget.max_input.value())
-        self.edit_dataset_args("bucket_reso_steps", self.widget.steps_input.value())
+        self.edit_dataset_args("enable_ar_bucket", True)
+        self.edit_dataset_args("num_ar_buckets", self.widget.steps_input.value())
 
     def load_dataset_args(self, dataset_args: dict) -> bool:
         dataset_args: dict = dataset_args.get(self.name, {})
-
-        # update element inputs - use widget's current value as default if not in saved config
-        self.widget.bucket_group.setChecked(dataset_args.get("enable_bucket", self.widget.bucket_group.isChecked()))
-        no_upscale = dataset_args.get("bucket_no_upscale", self.widget.bucket_no_upscale.isChecked())
-        multires = dataset_args.get("multires_training", self.widget.multires_training.isChecked())
-        if no_upscale and multires:
-            multires = False
-
-        self.widget.bucket_no_upscale.setChecked(no_upscale)
-        self.widget.multires_training.setChecked(multires)
-        self.widget.min_input.setValue(dataset_args.get("min_bucket_reso", self.widget.min_input.value()))
-        self.widget.max_input.setValue(dataset_args.get("max_bucket_reso", self.widget.max_input.value()))
-        self.widget.steps_input.setValue(dataset_args.get("bucket_reso_steps", self.widget.steps_input.value()))
-
-        # edit dataset_args to match
+        # accept both the new (enable_ar_bucket/num_ar_buckets) and old keys
+        enabled = dataset_args.get(
+            "enable_ar_bucket", dataset_args.get("enable_bucket", self.widget.bucket_group.isChecked())
+        )
+        self.widget.bucket_group.setChecked(enabled)
+        self.widget.steps_input.setValue(
+            dataset_args.get("num_ar_buckets", self.widget.steps_input.value())
+        )
         self.enable_disable(self.widget.bucket_group.isChecked())
         return True
