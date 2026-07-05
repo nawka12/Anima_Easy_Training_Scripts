@@ -13,9 +13,6 @@ ANIMA_KEYS: tuple[str, ...] = (
     "pretrained_model_name_or_path",
     "qwen3",
     "vae",
-    "t5_tokenizer_path",
-    "qwen3_max_token_length",
-    "t5_max_token_length",
     "timestep_sampling",
     "discrete_flow_shift",
     "sigmoid_scale",
@@ -85,7 +82,6 @@ class GeneralWidget(BaseWidget):
         setup_file(self.widget.base_model_input, self.widget.base_model_selector, model_exts)
         setup_file(self.widget.qwen3_model_input, self.widget.qwen3_model_selector, model_exts)
         setup_file(self.widget.vae_input, self.widget.vae_selector, model_exts)
-        setup_folder(self.widget.t5_tokenizer_input, self.widget.t5_tokenizer_selector)
 
         self.widget.global_protected_tags_file_input.setMode("file", [".txt"])
         self.widget.global_protected_tags_file_input.highlight = True
@@ -93,12 +89,18 @@ class GeneralWidget(BaseWidget):
         self.widget.global_protected_tags_file_selector.setIcon(more_icon)
 
         # Hidden: diffusion-pipe has no global training seed (the sample seed
-        # lives in the Sample panel), and keep_tokens_separator is a global
-        # caption knob that now lives in the Captions panel.
+        # lives in the Sample panel), keep_tokens_separator is a global caption
+        # knob that now lives in the Captions panel, and the Anima path has no
+        # T5 and a hardcoded 512-token Qwen3 limit. Emitting the dead keys also
+        # made the converter misdetect new configs as old sd_scripts ones.
         for elem in (
             self.widget.label_7, self.widget.seed_input,
             self.widget.keep_tokens_seperator_enable,
             self.widget.keep_tokens_seperator_input,
+            self.widget.t5_tokenizer_label, self.widget.t5_tokenizer_input,
+            self.widget.t5_tokenizer_selector,
+            self.widget.qwen3_max_token_label, self.widget.qwen3_max_token_input,
+            self.widget.t5_max_token_label, self.widget.t5_max_token_input,
         ):
             elem.hide()
 
@@ -112,8 +114,6 @@ class GeneralWidget(BaseWidget):
         self.dataset_args["batch_size"] = self.widget.batch_size_input.value()
 
         # Seed initial Anima args
-        self.edit_anima_args("qwen3_max_token_length", self.widget.qwen3_max_token_input.value())
-        self.edit_anima_args("t5_max_token_length", self.widget.t5_max_token_input.value())
         self.edit_anima_args("timestep_sampling", self.widget.timestep_sampling_selector.currentText())
         self._sync_sigmoid_scale()
         self._sync_discrete_flow_shift()
@@ -142,12 +142,6 @@ class GeneralWidget(BaseWidget):
         )
         self.widget.vae_selector.clicked.connect(
             lambda: self.set_file_from_dialog(self.widget.vae_input, "VAE Model", "Model file")
-        )
-        self.widget.t5_tokenizer_input.textChanged.connect(
-            lambda x: self.edit_anima_args("t5_tokenizer_path", x, optional=True)
-        )
-        self.widget.t5_tokenizer_selector.clicked.connect(
-            lambda: self.set_folder_from_dialog(self.widget.t5_tokenizer_input, "T5 Tokenizer Folder")
         )
 
         # Global args
@@ -213,12 +207,6 @@ class GeneralWidget(BaseWidget):
             lambda _: self._sync_discrete_flow_shift()
         )
         self.widget.sigmoid_scale_input.valueChanged.connect(lambda _: self._sync_sigmoid_scale())
-        self.widget.qwen3_max_token_input.valueChanged.connect(
-            lambda x: self.edit_anima_args("qwen3_max_token_length", x)
-        )
-        self.widget.t5_max_token_input.valueChanged.connect(
-            lambda x: self.edit_anima_args("t5_max_token_length", x)
-        )
 
         # Anima memory / attention
         self.widget.vae_chunk_size_input.valueChanged.connect(lambda _: self._sync_vae_chunk())
@@ -440,9 +428,6 @@ class GeneralWidget(BaseWidget):
         self.widget.base_model_input.setText(pick("pretrained_model_name_or_path", ""))
         self.widget.qwen3_model_input.setText(pick("qwen3", ""))
         self.widget.vae_input.setText(pick("vae", ""))
-        self.widget.t5_tokenizer_input.setText(pick("t5_tokenizer_path", ""))
-        self.widget.qwen3_max_token_input.setValue(pick("qwen3_max_token_length", 512))
-        self.widget.t5_max_token_input.setValue(pick("t5_max_token_length", 512))
         self.widget.timestep_sampling_selector.setCurrentText(pick("timestep_sampling", "logit_normal"))
         self.widget.discrete_flow_shift_input.setValue(pick("discrete_flow_shift", 3.0))
         self.widget.sigmoid_scale_input.setValue(pick("sigmoid_scale", 1.0))
@@ -476,9 +461,6 @@ class GeneralWidget(BaseWidget):
         self.edit_anima_args("pretrained_model_name_or_path", self.widget.base_model_input.text())
         self.edit_anima_args("qwen3", self.widget.qwen3_model_input.text())
         self.edit_anima_args("vae", self.widget.vae_input.text())
-        self.edit_anima_args("t5_tokenizer_path", self.widget.t5_tokenizer_input.text(), optional=True)
-        self.edit_anima_args("qwen3_max_token_length", self.widget.qwen3_max_token_input.value())
-        self.edit_anima_args("t5_max_token_length", self.widget.t5_max_token_input.value())
         self.change_timestep_sampling()
         self._sync_vae_chunk()
         self.edit_anima_args(

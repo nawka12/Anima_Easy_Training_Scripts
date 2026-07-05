@@ -71,8 +71,14 @@ def is_old_format(loaded: dict) -> bool:
         return False
     net_args = loaded.get("network_args", {})
     net_args = net_args.get("args") if isinstance(net_args, dict) else None
-    if isinstance(net_args, dict) and net_args and "type" not in net_args:
-        return True
+    if isinstance(net_args, dict):
+        # The new NetworkUI always emits `type`, so its presence is definitive:
+        # never convert such a config, even if stray legacy keys (old anima
+        # fields, [[datasets]] persistence) appear elsewhere in the file.
+        if "type" in net_args:
+            return False
+        if net_args:
+            return True
     anima = _group(loaded, "anima_args", "args")
     if any(k in anima for k in ("t5_tokenizer_path", "qwen3_max_token_length")):
         return True
