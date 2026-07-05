@@ -31,15 +31,21 @@ class BucketWidget(BaseWidget):
         super().setup_widget()
         self.widget.setupUi(self.content)
 
-        # Repurpose the "steps" spinbox as the aspect-ratio bucket count.
+        # Repurpose the "steps" spinbox as the aspect-ratio bucket count, and
+        # relabel it (the generated label still says "Bucket Resolution Steps").
+        ar_tooltip = (
+            "num_ar_buckets: number of aspect-ratio buckets, evenly spaced in log "
+            "space between min_ar (0.5) and max_ar (2.0). More buckets = finer "
+            "aspect-ratio granularity and less cropping."
+        )
         self.widget.steps_input.setMinimum(1)
         self.widget.steps_input.setMaximum(64)
         self.widget.steps_input.setSingleStep(1)
         self.widget.steps_input.setValue(7)
-        self.widget.steps_input.setToolTip(
-            "num_ar_buckets: number of aspect-ratio buckets, evenly spaced in log "
-            "space between min_ar (0.5) and max_ar (2.0)."
-        )
+        self.widget.steps_input.setToolTip(ar_tooltip)
+        if getattr(self.widget, "steps_label", None) is not None:
+            self.widget.steps_label.setText("Number of AR Buckets")
+            self.widget.steps_label.setToolTip(ar_tooltip)
 
         # Hide the resolution-step controls that don't map to AR bucketing.
         for name in ("min_input", "max_input", "bucket_no_upscale", "multires_training"):
