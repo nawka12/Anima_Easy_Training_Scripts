@@ -40,6 +40,15 @@ class NetworkWidget(BaseWidget):
         # (-1 = auto). Everything else in the old LyCORIS UI is unused now.
         self.widget.dylora_unit_input.setMinimum(-1)
         self.widget.dylora_unit_input.setValue(-1)
+        factor_tip = (
+            "<html><body><p>Kronecker factor for LoKr. -1 = auto (most square split, "
+            "smallest adapter). With an oversized rank (full-matrix mode) this is what "
+            "controls the adapter's capacity/size: smaller factor = larger adapter "
+            "(16 is a common starting point, 8 for more capacity).</p></body></html>"
+        )
+        self.widget.dylora_unit_label.setText("LoKr Factor")
+        self.widget.dylora_unit_label.setToolTip(factor_tip)
+        self.widget.dylora_unit_input.setToolTip(factor_tip)
 
         # Remove the tabs that no longer map to anything in diffusion-pipe;
         # hiding the page widget alone leaves an empty, clickable tab behind.
