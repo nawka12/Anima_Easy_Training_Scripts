@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtWidgets
 from main_ui_files.AccelerateUI import AccelerateWidget
 from main_ui_files.AdditionalResolutionsUI import AdditionalResolutionsWidget
 from main_ui_files.BucketUI import BucketWidget
+from main_ui_files.CaptionsUI import CaptionsWidget
 from main_ui_files.ExtraArgsUI import ExtraArgsWidget
 from main_ui_files.GeneralUI import GeneralWidget
 from main_ui_files.LoggingUI import LoggingWidget
@@ -56,6 +57,7 @@ class ArgsWidget(QtWidgets.QWidget):
         self.args_widget_array.append(self.optimizer_widget)
         self.args_widget_array.append(SavingWidget())
         self.args_widget_array.append(BucketWidget())
+        self.args_widget_array.append(CaptionsWidget())
         self.args_widget_array.append(self.additional_resolutions_widget)
         self.args_widget_array.append(SampleWidget())
         self.args_widget_array.append(LoggingWidget())

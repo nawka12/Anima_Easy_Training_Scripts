@@ -134,6 +134,17 @@ For a **full fine-tune**, set `type = "none"` (the adapter is omitted). For a pl
 
 diffusion-pipe trains multiple resolutions natively: the dataset is duplicated across each area in a `resolutions` list. Add rows under **Additional Resolutions (Mixed-Res)** in the UI; at training time they collapse into a single list, e.g. `resolutions = [768, 1024]`. No per-block bucket configuration is needed.
 
+### Captions (`.txt` + `.caption`)
+
+diffusion-pipe's dataset reads captions from `<image>.txt` only (there is no configurable caption extension). If your dataset pairs **booru tags in `.txt`** with a **natural-language caption in `.caption`**, enable **Captions → "Train on both .txt tags and .caption NLP"**. On validation, the backend writes a `captions.json` into each dataset folder (next to the images) listing each image's captions, and turns on `online_captions` (with random-caption off).
+
+diffusion-pipe then trains **one example per caption**, so:
+
+- image with only `.txt` → trained **once** per epoch (tags)
+- image with `.txt` + `.caption` → trained **twice** per epoch (once on the tags, once on the NL caption)
+
+i.e. a 1k-image set where every image has both files becomes 2k effective samples per epoch. Mixed folders work too (1-caption and 2-caption images coexist). Without this option, only `.txt` is used and `.caption` files are ignored (they also produce harmless "could not open" warnings, since diffusion-pipe scans them as would-be images).
+
 ## Credit
 
 - [Raelina-Rae/diffusion-pipe](https://github.com/Raelina-Rae/diffusion-pipe) — the training backend (a fork of tdrussell/diffusion-pipe with Anima support).

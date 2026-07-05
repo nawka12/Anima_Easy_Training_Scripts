@@ -424,9 +424,18 @@ Verified headless (`QT_QPA_PLATFORM=offscreen`) by driving the real widgets → 
 - `LoggingUI.py` — log-system selector now emits `enable_wandb`; tracker/run-name inputs emit `wandb_tracker_name`/`wandb_run_name`. TensorBoard stays automatic in dp. Verified → `[monitoring]`.
 - `SubsetUI.py` — the existing mask-folder input now emits per-directory **`mask_path`** (was sd_scripts `conditioning_data_dir`); gated by the OptimizerUI masked-loss toggle via the existing signal. Verified → `[[directory]].mask_path`.
 
+**Multi-caption (`.txt` + `.caption`) — added later:**
+- Behavior (per user): train on **both** captions — an image with `.txt`+`.caption` is seen **twice per epoch** (once per caption); `.txt`-only images once. Achieved via `captions.json` with `[tags]`/`[nl]`/`[tags, nl]` + `online_captions=true` and `enable_random_caption` **off** (dp makes one training example per variant — dataset.py:344-350).
+- New `main_ui_files/CaptionsUI.py` (`CaptionsWidget`, group `caption_args`): a single "Train on both .txt tags and .caption NLP" toggle. Registered in `ArgsListUI` after BucketWidget.
+- New `backend/utils/captions.py`: `build_captions_json(dir)` writes `captions.json` (variants `[tags]`/`[nl]`/`[tags, nl]`) keyed by `str(dir/name)` to match dp's `self.path.glob('*')` enumeration.
+- `validation.py`: when `caption_args.combine_txt_caption` is set and the payload is valid, builds `captions.json` per subset and sets `online_captions=true` (leaves random off). Verified end-to-end (widget → validate → captions.json + flag; keys match dp; effective samples/epoch = Σ variants; toggle-off emits nothing).
+- Gotcha: dp scans `.caption` as a would-be image (not in its skip list) → one harmless "could not open, skipping" warning per `.caption` at cache time, with or without this feature. Optional future fix: patch `.caption` into dp's skip list.
+- Open: still global (not per-subset); user asked "why not subset args" — dp supports `online_captions`/`enable_random_caption` per `[[directory]]`, so a per-subset toggle is viable if wanted.
+
 **Remaining nice-to-haves (non-blocking):**
-- Move `shuffle_caption`/`keep_tokens` to a global Captions group (dp reads them top-level; per-subset values are currently ignored). Drop dead per-subset aug/reg keys.
+- Move `shuffle_caption`/`keep_tokens` to a global Captions group (dp reads them top-level; per-subset values are currently ignored). Drop dead per-subset aug/reg keys (incl. the now-dead caption-extension dropdown).
 - `min_ar`/`max_ar` float controls, an `llm_adapter_lr` control, visual decluttering of the hidden controls.
+- Optional: a "combined caption only" (no random augmentation) mode for the multi-caption flow.
 
 ---
 
