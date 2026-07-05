@@ -1,4 +1,3 @@
-from PySide6 import QtCore
 from PySide6.QtWidgets import QWidget
 from ui_files.NetworkUI import Ui_network_ui
 from modules.BaseWidget import BaseWidget
@@ -29,7 +28,6 @@ class NetworkWidget(BaseWidget):
     def setup_widget(self) -> None:
         super().setup_widget()
         self.widget.setupUi(self.content)
-        self.widget.network_args_item_widget.layout().setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
 
         # Collapse the algo selector to the three diffusion-pipe choices.
         self.widget.algo_select.blockSignals(True)
@@ -43,15 +41,21 @@ class NetworkWidget(BaseWidget):
         self.widget.dylora_unit_input.setMinimum(-1)
         self.widget.dylora_unit_input.setValue(-1)
 
+        # Remove the tabs that no longer map to anything in diffusion-pipe;
+        # hiding the page widget alone leaves an empty, clickable tab behind.
+        for tab in (self.widget.block_weight_tab, self.widget.network_args_tab):
+            index = self.widget.tabWidget.indexOf(tab)
+            if index != -1:
+                self.widget.tabWidget.removeTab(index)
+
         # Hide the controls that no longer map to anything in diffusion-pipe.
         for name in (
-            "block_weight_tab", "lycoris_preset_input", "conv_dim_input", "conv_alpha_input",
+            "lycoris_preset_input", "conv_dim_input", "conv_alpha_input",
             "min_timestep_input", "max_timestep_input", "unet_te_both_select",
             "bypass_mode_enable", "train_norm_enable", "dora_enable", "ip_gamma_enable",
             "ip_gamma_input", "rescale_enable", "constrain_enable", "constrain_input",
             "lora_fa_enable", "train_blocks_selector", "network_alpha_input",
             "cache_te_outputs_enable", "cache_te_to_disk_enable",
-            "add_network_arg_button", "network_args_item_widget",
         ):
             elem = getattr(self.widget, name, None)
             if elem is not None:
