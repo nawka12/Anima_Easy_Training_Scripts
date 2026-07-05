@@ -45,13 +45,16 @@ _DROPPED_OPT = (
 
 # per-subset keys with no diffusion-pipe equivalent
 _DROPPED_SUBSET = (
-    "caption_extension", "is_reg", "flip_aug", "color_aug", "random_crop",
+    "caption_extension", "is_reg", "is_val", "flip_aug", "color_aug", "random_crop",
     "random_crop_padding_percent", "caption_dropout_rate",
     "caption_dropout_every_n_epochs", "caption_tag_dropout_rate", "gamma_aug",
     "gamma_aug_range", "gamma_aug_rate", "face_crop_aug_range", "token_warmup_min",
     "token_warmup_step", "shuffle_caption_sigma", "protected_tags_file",
     "target_image_dir",
 )
+
+# per-subset caption keys diffusion-pipe reads dataset-wide -> caption_args
+_PROMOTED_SUBSET = ("shuffle_caption", "keep_tokens", "keep_tokens_separator")
 
 # nested network_args (LyCORIS) keys we keep for LoKr
 _KEPT_LOKR = ("factor", "use_tucker", "rank_dropout", "module_dropout", "dropout")
@@ -91,7 +94,7 @@ def _group(loaded: dict, group: str, sub: str) -> dict:
     return inner if isinstance(inner, dict) else {}
 
 
-def _convert_subset(subset: dict, warnings: set) -> dict:
+def _convert_subset(subset: dict, warnings: set, caption: dict) -> dict:
     out = dict(subset)
     if "conditioning_data_dir" in out:
         out["mask_path"] = out.pop("conditioning_data_dir")
@@ -99,6 +102,19 @@ def _convert_subset(subset: dict, warnings: set) -> dict:
         if key in out:
             out.pop(key)
             warnings.add(f"subset: dropped '{key}'")
+    # dp reads caption knobs dataset-wide; promote the strongest per-subset
+    # values into the global Captions group.
+    if out.pop("shuffle_caption", False):
+        caption["shuffle_caption"] = True
+        warnings.add("captions: per-subset shuffle_caption promoted to global Captions")
+    keep = out.pop("keep_tokens", 0)
+    if keep and keep > caption.get("keep_tokens", 0):
+        caption["keep_tokens"] = keep
+        warnings.add("captions: per-subset keep_tokens promoted to global Captions")
+    separator = out.pop("keep_tokens_separator", "")
+    if separator and not caption.get("keep_tokens_separator"):
+        caption["keep_tokens_separator"] = separator
+        warnings.add("captions: per-subset keep_tokens_separator promoted to global Captions")
     return out
 
 
@@ -217,13 +233,25 @@ def convert(loaded: dict) -> tuple[dict, list[str]]:
             log["wandb_run_name"] = log.pop("run_name")
 
     # ---- subsets (+ Format-2 datasets) ----
+    caption: dict = {}
     if isinstance(new.get("subsets"), list):
-        new["subsets"] = [_convert_subset(s, warnings) for s in new["subsets"] if isinstance(s, dict)]
+        new["subsets"] = [_convert_subset(s, warnings, caption) for s in new["subsets"] if isinstance(s, dict)]
     if isinstance(new.get("datasets"), list):
         warnings.add("multi-resolution [[datasets]] preserved (collapses to a resolutions list at train time)")
         for dataset in new["datasets"]:
             if isinstance(dataset, dict) and isinstance(dataset.get("subsets"), list):
-                dataset["subsets"] = [_convert_subset(s, warnings) for s in dataset["subsets"] if isinstance(s, dict)]
+                dataset["subsets"] = [_convert_subset(s, warnings, caption) for s in dataset["subsets"] if isinstance(s, dict)]
+
+    # ---- global caption knobs -> caption_args ----
+    general = ensure("general_args", "args") if "general_args" in new else {}
+    if general.pop("seed", None) is not None:
+        warnings.add("general: dropped 'seed' (dp has no training seed; the sample seed lives in the Sample panel)")
+    separator = general.pop("keep_tokens_separator", "")
+    if separator and not caption.get("keep_tokens_separator"):
+        caption["keep_tokens_separator"] = separator
+        warnings.add("captions: keep_tokens_separator moved to the global Captions group")
+    if caption:
+        ensure("caption_args", "dataset_args").update(caption)
 
     return new, sorted(warnings)
 

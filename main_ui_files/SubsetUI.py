@@ -7,10 +7,14 @@ from PySide6.QtWidgets import QFileDialog, QWidget
 
 from modules.BaseWidget import BaseWidget
 from modules.DragDropLineEdit import DragDropLineEdit
-from ui_files.sub_dataset_extra_input import Ui_sub_dataset_extra_input
 from ui_files.sub_dataset_input import Ui_sub_dataset_input
 
 
+# diffusion-pipe consumes exactly three per-directory keys: path (image_dir),
+# num_repeats and mask_path. The other sd_scripts subset controls (augments,
+# regularization, caption extension, per-subset shuffle/keep-tokens, ...) have
+# no equivalent and are hidden; global caption handling lives in the Captions
+# panel instead.
 class SubsetWidget(BaseWidget):
     edited = Signal(dict, str)
 
@@ -21,15 +25,11 @@ class SubsetWidget(BaseWidget):
         self.colap.set_title(display_name)
         self.colap.set_extra("remove")
         self.widget = Ui_sub_dataset_input()
-        self.extra_content = QWidget()
-        self.extra_widget = Ui_sub_dataset_extra_input()
         self.name = name
 
         self.dataset_args = {
             "num_repeats": 1,
-            "caption_extension": ".txt",
             "name": self.name,
-            "random_crop_padding_percent": 0.05,
         }
 
         self.setup_widget()
@@ -38,18 +38,9 @@ class SubsetWidget(BaseWidget):
     def setup_widget(self) -> None:
         super().setup_widget()
         self.widget.setupUi(self.content)
-        self.widget.extra_args.add_widget(self.extra_content, "main_widget")
-        self.extra_widget.setupUi(self.extra_content)
-        self.widget.extra_args.set_title("Optional Args")
         self.widget.image_folder_input.setMode("folder")
         self.widget.image_folder_input.highlight = True
         self.widget.image_folder_selector.setIcon(
-            QIcon(str(Path("icons/more-horizontal.svg")))
-        )
-        self.widget.target_image_folder_input.setMode("folder")
-        self.widget.target_image_folder_input.highlight = True
-        self.widget.target_image_folder_input.allow_empty = True
-        self.widget.target_image_folder_selector.setIcon(
             QIcon(str(Path("icons/more-horizontal.svg")))
         )
         self.widget.masked_image_input.setMode("folder")
@@ -57,18 +48,18 @@ class SubsetWidget(BaseWidget):
         self.widget.masked_image_selector.setIcon(
             QIcon(str(Path("icons/more-horizontal.svg")))
         )
-        self.extra_widget.protected_tags_input.setMode("file", [".txt"])
-        self.extra_widget.protected_tags_input.highlight = True
-        self.extra_widget.protected_tags_input.allow_empty = True
-        self.extra_widget.protected_tags_selector.setIcon(
-            QIcon(str(Path("icons/more-horizontal.svg")))
-        )
 
-        self.extra_widget.face_crop_group.setChecked(False)
-        self.extra_widget.caption_dropout_group.setChecked(False)
-        self.extra_widget.gamma_aug_group.setChecked(False)
-        self.extra_widget.token_warmup_group.setChecked(False)
-        self.extra_widget.shuffle_caption_group.setChecked(False)
+        # Controls with no diffusion-pipe mapping.
+        for name in (
+            "target_image_dir_label", "target_image_folder_input", "target_image_folder_selector",
+            "flip_augment_enable", "shuffle_captions_enable", "random_crop_enable",
+            "color_augment_enable", "regularization_images_enable", "validation_images_enable",
+            "keep_tokens_label", "keep_tokens_input", "caption_label", "caption_extension_selector",
+            "random_crop_padding_percent_label", "random_crop_padding_percent_input", "extra_args",
+        ):
+            elem = getattr(self.widget, name, None)
+            if elem is not None:
+                elem.hide()
 
     def setup_connections(self) -> None:
         self.widget.image_folder_input.textChanged.connect(
@@ -79,14 +70,6 @@ class SubsetWidget(BaseWidget):
                 "Subset Image Folder", self.widget.image_folder_input
             )
         )
-        self.widget.target_image_folder_input.textChanged.connect(
-            lambda x: self.edit_dataset_args("target_image_dir", x, True)
-        )
-        self.widget.target_image_folder_selector.clicked.connect(
-            lambda: self.set_folder_from_dialog(
-                "Target Image Folder", self.widget.target_image_folder_input, False
-            )
-         )
         self.widget.masked_image_input.textChanged.connect(
             lambda x: self.edit_dataset_args("mask_path", x, True)
         )
@@ -97,88 +80,6 @@ class SubsetWidget(BaseWidget):
         )
         self.widget.repeats_input.valueChanged.connect(
             lambda x: self.edit_dataset_args("num_repeats", x)
-        )
-        self.widget.shuffle_captions_enable.clicked.connect(
-            lambda x: self.edit_dataset_args("shuffle_caption", x, True)
-        )
-        self.widget.flip_augment_enable.clicked.connect(
-            lambda x: self.edit_dataset_args("flip_aug", x, True)
-        )
-        self.widget.keep_tokens_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("keep_tokens", x, True)
-        )
-        self.widget.color_augment_enable.clicked.connect(
-            lambda x: self.edit_dataset_args("color_aug", x, True)
-        )
-        self.widget.random_crop_enable.clicked.connect(
-            lambda x: self.edit_dataset_args("random_crop", x, True)
-        )
-        self.widget.random_crop_padding_percent_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("random_crop_padding_percent", x, False)
-        )
-
-        self.widget.caption_extension_selector.currentTextChanged.connect(
-            lambda x: self.edit_dataset_args("caption_extension", x)
-        )
-        self.widget.regularization_images_enable.clicked.connect(
-            lambda x: self.edit_dataset_args("is_reg", x, True)
-        )
-        self.widget.validation_images_enable.clicked.connect(
-            lambda x: self.edit_dataset_args("is_val", x, True)
-        )
-        self.extra_widget.face_crop_group.clicked.connect(self.enable_disable_face_crop)
-        self.extra_widget.face_crop_width_input.valueChanged.connect(
-            lambda: self.enable_disable_face_crop(True)
-        )
-        self.extra_widget.face_crop_height_input.valueChanged.connect(
-            lambda: self.enable_disable_face_crop(True)
-        )
-        self.extra_widget.caption_dropout_group.clicked.connect(
-            self.enable_disable_caption_dropout
-        )
-        self.extra_widget.caption_dropout_rate_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("caption_dropout_rate", x, True)
-        )
-        self.extra_widget.caption_epoch_dropout_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("caption_dropout_every_n_epochs", x, True)
-        )
-        self.extra_widget.caption_tag_dropout_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("caption_tag_dropout_rate", x, True)
-        )
-        self.extra_widget.gamma_aug_group.clicked.connect(
-            self.enable_disable_gamma_aug
-        )
-        self.extra_widget.gamma_aug_min_input.valueChanged.connect(
-            lambda: self.enable_disable_gamma_aug(self.extra_widget.gamma_aug_group.isChecked())
-        )
-        self.extra_widget.gamma_aug_max_input.valueChanged.connect(
-            lambda: self.enable_disable_gamma_aug(self.extra_widget.gamma_aug_group.isChecked())
-        )
-        self.extra_widget.gamma_aug_rate_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("gamma_aug_rate", x, True)
-        )
-        self.extra_widget.shuffle_caption_group.clicked.connect(
-            self.enable_disable_shuffle_caption_modifers
-        )
-        self.extra_widget.shuffle_caption_sigma_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("shuffle_caption_sigma", x, True)
-        )
-        self.extra_widget.token_warmup_group.clicked.connect(
-            self.enable_disable_token_warmup
-        )
-        self.extra_widget.token_minimum_warmup_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("token_warmup_min", x)
-        )
-        self.extra_widget.token_warmup_step_input.valueChanged.connect(
-            lambda x: self.edit_dataset_args("token_warmup_step", x)
-        )
-        self.extra_widget.protected_tags_input.textChanged.connect(
-            lambda x: self.edit_dataset_args("protected_tags_file", x, True)
-        )
-        self.extra_widget.protected_tags_selector.clicked.connect(
-            lambda: self.set_file_from_dialog(
-                "Protected Tags File", self.extra_widget.protected_tags_input
-            )
         )
 
     def edit_dataset_args(
@@ -214,27 +115,6 @@ class SubsetWidget(BaseWidget):
             repeats = int(file_name.name.split("_")[0])
             self.widget.repeats_input.setValue(repeats)
 
-    def set_file_from_dialog(
-        self,
-        title_str: str,
-        element: DragDropLineEdit,
-        extensions: str = "Text Files (*.txt);;All Files (*.*)",
-    ) -> None:
-        """Open file picker dialog for file selection"""
-        default_dir = Path(element.text())
-        file_name, _ = QFileDialog.getOpenFileName(
-            self,
-            title_str,
-            dir=str(default_dir. parent) if default_dir. exists() else "",
-            filter=extensions,
-        )
-        if not file_name:
-            return
-        file_name = Path(file_name)
-        element.setText(file_name.as_posix())
-        element.update_stylesheet()
-
-
     def enable_disable_masked_loss(self, checked: bool) -> None:
         # diffusion-pipe does masked training per directory via [[directory]].mask_path.
         if "mask_path" in self.dataset_args:
@@ -247,273 +127,16 @@ class SubsetWidget(BaseWidget):
             True,
         )
 
-    def enable_disable_face_crop(self, checked: bool) -> None:
-        if "face_crop_aug_range" in self.dataset_args:
-            del self.dataset_args["face_crop_aug_range"]
-        if not checked:
-            return
-        self.edit_dataset_args(
-            "face_crop_aug_range",
-            [
-                self.extra_widget.face_crop_width_input.value(),
-                self.extra_widget.face_crop_height_input.value(),
-            ],
-        )
-
-    def enable_disable_caption_dropout(self, checked: bool) -> None:
-        args = [
-            "caption_dropout_rate",
-            "caption_dropout_every_n_epochs",
-            "caption_tag_dropout_rate",
-        ]
-        for arg in args:
-            if arg in self.dataset_args:
-                del self.dataset_args[arg]
-        if not checked:
-            return
-        self.edit_dataset_args(
-            args[0], self.extra_widget.caption_dropout_rate_input.value(), True
-        )
-        self.edit_dataset_args(
-            args[1], self.extra_widget.caption_epoch_dropout_input.value(), True
-        )
-        self.edit_dataset_args(
-            args[2], self.extra_widget.caption_tag_dropout_input.value(), True
-        )
-
-    def enable_disable_gamma_aug(self, checked: bool) -> None:
-        args = ["gamma_aug", "gamma_aug_range", "gamma_aug_rate"]
-        for arg in args:
-            if arg in self.dataset_args:
-                del self.dataset_args[arg]
-        if not checked:
-            return
-        self.edit_dataset_args("gamma_aug", True, True)
-        self.edit_dataset_args(
-            "gamma_aug_range",
-            [
-                self.extra_widget.gamma_aug_min_input.value(),
-                self.extra_widget.gamma_aug_max_input.value(),
-            ],
-        )
-        self.edit_dataset_args(
-            "gamma_aug_rate", self.extra_widget.gamma_aug_rate_input.value(), True
-        )
-
-    def enable_disable_token_warmup(self, checked: bool) -> None:
-        args = ["token_warmup_min", "token_warmup_step"]
-        for arg in args:
-            if arg in self.dataset_args:
-                del self.dataset_args[arg]
-        if not checked:
-            return
-        self.edit_dataset_args(
-            args[0], self.extra_widget.token_minimum_warmup_input.value()
-        )
-        self.edit_dataset_args(
-            args[1], self.extra_widget.token_warmup_step_input.value()
-        )
-
-    def enable_disable_random_crop(self, checked: bool) -> None:
-        if "random_crop" in self.dataset_args:
-            del self.dataset_args["random_crop"]
-        self.widget.random_crop_enable.setEnabled(not checked)
-        self.edit_dataset_args(
-            "random_crop",
-            False if checked else self.widget.random_crop_enable.isChecked(),
-            True,
-        )
-
-    def enable_disable_color_aug(self, checked: bool) -> None:
-        if "color_aug" in self.dataset_args:
-            del self.dataset_args["color_aug"]
-        self.widget.color_augment_enable.setEnabled(not checked)
-        self.edit_dataset_args(
-            "color_aug",
-            False if checked else self.widget.color_augment_enable.isChecked(),
-            True,
-        )
-
-    def enable_disable_keep_tokens(self, checked: bool) -> None:
-        if "keep_tokens" in self.dataset_args:
-            del self.dataset_args["keep_tokens"]
-        self.widget.keep_tokens_input.setEnabled(not checked)
-        self.edit_dataset_args(
-            "keep_tokens",
-            False if checked else self.widget.keep_tokens_input.value(),
-            True,
-        )
-
-    def enable_disable_random_crop_padding_percent(self, checked: bool) -> None:
-        self.widget.random_crop_padding_percent_input.setEnabled(not checked)
-        self.edit_dataset_args(
-            "random_crop_padding_percent",
-            self.widget.random_crop_padding_percent_input.value(),
-            True,
-        )
-
-    def enable_disable_shuffle_caption_modifers(self, checked: bool) -> None:
-        args = ["shuffle_caption_sigma"]
-        for arg in args:
-            if arg in self.dataset_args:
-                del self.dataset_args[arg]
-        if not checked:
-            return
-        self.edit_dataset_args(
-            args[0], self.extra_widget.shuffle_caption_sigma_input.value()
-        )
-
     def load_dataset_args(self, dataset_args: dict) -> bool:
-        # update element inputs
         self.widget.image_folder_input.setText(dataset_args.get("image_dir", ""))
-        self.widget.target_image_folder_input.setText(
-            dataset_args.get("target_image_dir", "")
-        )
-        
         self.widget.masked_image_input.setText(
             dataset_args.get("mask_path", dataset_args.get("conditioning_data_dir", ""))
         )
         self.widget.repeats_input.setValue(dataset_args.get("num_repeats", 1))
-        self.widget.shuffle_captions_enable.setChecked(
-            dataset_args.get("shuffle_caption", False)
-        )
-        self.widget.flip_augment_enable.setChecked(dataset_args.get("flip_aug", False))
-        self.widget.keep_tokens_input.setValue(dataset_args.get("keep_tokens", 0))
-        self.widget.random_crop_padding_percent_input.setValue(dataset_args.get("random_crop_padding_percent", 0.05))
-        self.widget.color_augment_enable.setChecked(
-            dataset_args.get("color_aug", False)
-        )
-        self.widget.random_crop_enable.setChecked(
-            dataset_args.get("random_crop", False)
-        )
-        self.widget.caption_extension_selector.setCurrentText(
-            dataset_args.get("caption_extension", ".txt")
-        )
-        self.widget.regularization_images_enable.setChecked(
-            dataset_args.get("is_reg", False)
-        )
-        self.widget.validation_images_enable.setChecked(
-            dataset_args.get("is_val", False)
-        )
-        self.extra_widget.face_crop_group.setChecked(
-            bool(dataset_args.get("face_crop_aug_range", False))
-        )
-        self.extra_widget.face_crop_width_input.setValue(
-            dataset_args.get("face_crop_aug_range", [1.0, 1.0])[0]
-        )
-        self.extra_widget.face_crop_height_input.setValue(
-            dataset_args.get("face_crop_aug_range", [1.0, 1.0])[1]
-        )
-        self.extra_widget.caption_dropout_group.setChecked(
-            any(
-                arg in dataset_args
-                for arg in [
-                    "caption_dropout_rate",
-                    "caption_dropout_every_n_epochs",
-                    "caption_tag_dropout_rate",
-                ]
-            )
-        )
 
-        self.extra_widget.gamma_aug_group.setChecked(
-            bool(dataset_args.get("gamma_aug", False))
-        )
-        self.extra_widget.gamma_aug_min_input.setValue(
-            dataset_args.get("gamma_aug_range", [0.95, 1.05])[0]
-        )
-        self.extra_widget.gamma_aug_max_input.setValue(
-            dataset_args.get("gamma_aug_range", [0.95, 1.05])[1]
-        )
-        self.extra_widget.gamma_aug_rate_input.setValue(
-            dataset_args.get("gamma_aug_rate", 0.5)
-        )
-
-        self.extra_widget.shuffle_caption_group.setChecked(
-            any(
-                arg in dataset_args
-                for arg in [
-                    "shuffle_caption_sigma",
-                ]
-            )
-        )
-        self.extra_widget.caption_dropout_rate_input.setValue(
-            dataset_args.get("caption_dropout_rate", 0.0)
-        )
-        self.extra_widget.caption_epoch_dropout_input.setValue(
-            dataset_args.get("caption_dropout_every_n_epochs", 0)
-        )
-        self.extra_widget.caption_tag_dropout_input.setValue(
-            dataset_args.get("caption_tag_dropout_rate", 0.0)
-        )
-        self.extra_widget.shuffle_caption_sigma_input.setValue(
-            dataset_args.get("shuffle_caption_sigma", 0)
-        )
-        self.extra_widget.token_warmup_group.setChecked(
-            any(
-                arg in dataset_args for arg in ["token_warmup_step", "token_warmup_min"]
-            )
-        )
-        self.extra_widget.token_minimum_warmup_input.setValue(
-            dataset_args.get("token_warmup_min", 1)
-        )
-        self.extra_widget.token_warmup_step_input.setValue(
-            dataset_args.get("token_warmup_step", 1)
-        )
-        self.extra_widget.protected_tags_input.setText(
-            dataset_args.get("protected_tags_file", "")
-        )
-
-        # edit dataset args to match
         self.edit_dataset_args("image_dir", self.widget.image_folder_input.text(), True)
-        self.edit_dataset_args(
-            "target_image_dir", self.widget.target_image_folder_input.text(), True
-        )
-        self.edit_dataset_args(
-            "mask_path", self.widget.masked_image_input.text(), True
-        )
+        self.edit_dataset_args("mask_path", self.widget.masked_image_input.text(), True)
         self.edit_dataset_args("num_repeats", self.widget.repeats_input.value())
-        self.edit_dataset_args(
-            "shuffle_caption", self.widget.shuffle_captions_enable.isChecked(), True
-        )
-        self.edit_dataset_args(
-            "flip_aug", self.widget.flip_augment_enable.isChecked(), True
-        )
-        self.edit_dataset_args(
-            "keep_tokens", self.widget.keep_tokens_input.value(), True
-        )
-        self.edit_dataset_args(
-            "color_aug", self.widget.color_augment_enable.isChecked(), True
-        )
-        self.edit_dataset_args(
-            "random_crop", self.widget.random_crop_enable.isChecked(), True
-        )
-        self.edit_dataset_args(
-            "caption_extension", self.widget.caption_extension_selector.currentText()
-        )
-        self.edit_dataset_args(
-            "random_crop_padding_percent", self.widget.random_crop_padding_percent_input.value(), False
-        )
-        self.edit_dataset_args(
-            "is_reg", self.widget.regularization_images_enable.isChecked(), True
-        )
-        self.edit_dataset_args(
-            "is_val", self.widget.validation_images_enable.isChecked(), True
-        )
-        self.enable_disable_face_crop(self.extra_widget.face_crop_group.isChecked())
-        self.enable_disable_caption_dropout(
-            self.extra_widget.caption_dropout_group.isChecked()
-        )
-        self.enable_disable_gamma_aug(
-            self.extra_widget.gamma_aug_group.isChecked()
-        )
-        self.enable_disable_token_warmup(
-            self.extra_widget.token_warmup_group.isChecked()
-        )
-        self.enable_disable_shuffle_caption_modifers(
-            self.extra_widget.shuffle_caption_group.isChecked()
-        )
-        self.edit_dataset_args(
-            "protected_tags_file", self.extra_widget.protected_tags_input.text(), True
-        )
 
         self.edited.emit(self.dataset_args, self.name)
+        return True

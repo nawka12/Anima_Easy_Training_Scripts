@@ -432,9 +432,16 @@ Verified headless (`QT_QPA_PLATFORM=offscreen`) by driving the real widgets → 
 - Gotcha: dp scans `.caption` as a would-be image (not in its skip list) → one harmless "could not open, skipping" warning per `.caption` at cache time, with or without this feature. Optional future fix: patch `.caption` into dp's skip list.
 - Open: still global (not per-subset); user asked "why not subset args" — dp supports `online_captions`/`enable_random_caption` per `[[directory]]`, so a per-subset toggle is viable if wanted.
 
+**Dead-control cleanup pass (done, verified headless end-to-end):**
+- `NetworkUI.py` — the hidden-but-still-clickable "Block Weights" / "Network Args" tabs are now **removed** from the tab widget (hiding a page widget doesn't remove its tab; both rendered blank).
+- Global caption knobs now actually work: `CaptionsUI.py` grew a "Shuffle caption tags" group (checkbox + keep-first-N-tags spin + keep-tokens-separator text, gated on shuffle since dp only applies them while shuffling — dataset.py `shuffle_captions`); emits `shuffle_caption`/`keep_tokens`/`keep_tokens_separator` in `caption_args`. Backend `validation.py` overlays `caption_args` (minus `combine_txt_caption`) onto the dataset general group `_build_dataset` reads. Previously per-subset shuffle/keep-tokens and GeneralUI's separator were **silently dropped** (no widget fed `dataset.general_args`).
+- `SubsetUI.py` — stripped to the three keys dp consumes (`image_dir`, `num_repeats`, `mask_path`); hid the dead controls (augs, random crop, caption-extension, is_reg/is_val, target dir, whole "Optional Args" collapsible) and deleted their emit/load plumbing. `SubsetListUI`/`ArgsListUI`/`MainUI` lost the now-dead `cacheLatentsChecked`/`keepTokensSepChecked` signal chains (maskedLoss chain kept).
+- `GeneralUI.py` — hid `seed` (dp has no training seed; sample seed lives in SampleUI) and the keep-tokens-separator controls; stopped emitting `seed`/`persistent_data_loader_workers`/`keep_tokens_separator`.
+- Converter — promotes per-subset `shuffle_caption`/`keep_tokens`/`keep_tokens_separator` (and general_args separator) into `caption_args.dataset_args`; drops `seed` and `is_val` with warnings.
+
 **Remaining nice-to-haves (non-blocking):**
-- Move `shuffle_caption`/`keep_tokens` to a global Captions group (dp reads them top-level; per-subset values are currently ignored). Drop dead per-subset aug/reg keys (incl. the now-dead caption-extension dropdown).
-- `min_ar`/`max_ar` float controls, an `llm_adapter_lr` control, visual decluttering of the hidden controls.
+- `min_ar`/`max_ar` float controls, an `llm_adapter_lr` control.
+- GeneralUI still shows some controls dp ignores (t5 tokenizer path / token-length spins, cache-latents toggles, xformers/sdpa, lowram/highvram, no_half_vae, comment…) — a decluttering pass like the SubsetUI one is possible; the emitted keys are harmlessly ignored by the backend.
 - Optional: a "combined caption only" (no random augmentation) mode for the multi-caption flow.
 
 ---

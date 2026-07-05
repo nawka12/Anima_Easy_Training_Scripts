@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from PySide6.QtCore import Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QPushButton, QWidget
 
@@ -33,9 +32,6 @@ ANIMA_KEYS: tuple[str, ...] = (
 
 
 class GeneralWidget(BaseWidget):
-    cacheLatentsChecked = Signal(bool)
-    keepTokensSepChecked = Signal(bool)
-
     def __init__(self, parent: QWidget = None) -> None:
         super().__init__(parent)
         self.colap.set_title("General Args")
@@ -96,11 +92,19 @@ class GeneralWidget(BaseWidget):
         self.widget.global_protected_tags_file_input.allow_empty = True
         self.widget.global_protected_tags_file_selector.setIcon(more_icon)
 
+        # Hidden: diffusion-pipe has no global training seed (the sample seed
+        # lives in the Sample panel), and keep_tokens_separator is a global
+        # caption knob that now lives in the Captions panel.
+        for elem in (
+            self.widget.label_7, self.widget.seed_input,
+            self.widget.keep_tokens_seperator_enable,
+            self.widget.keep_tokens_seperator_input,
+        ):
+            elem.hide()
+
         # Seed initial general args
-        self.args["seed"] = int(self.widget.seed_input.value())
         self.args["max_train_epochs"] = self.widget.max_train_input.value()
         self.args["max_data_loader_n_workers"] = self.widget.max_data_loader_n_workers_input.value()
-        self.args["persistent_data_loader_workers"] = True
         mixed_prec_text = self.widget.mixed_precision_selector.currentText()
         self.args["mixed_precision"] = mixed_prec_text if mixed_prec_text != "float" else "no"
 
@@ -182,7 +186,6 @@ class GeneralWidget(BaseWidget):
         self.widget.max_data_loader_n_workers_input.valueChanged.connect(
             lambda x: self.edit_args("max_data_loader_n_workers", x)
         )
-        self.widget.seed_input.valueChanged.connect(lambda x: self.edit_args("seed", int(x)))
         self.widget.batch_size_input.valueChanged.connect(lambda x: self.edit_dataset_args("batch_size", x))
         self.widget.mixed_precision_selector.currentTextChanged.connect(
             lambda x: self.edit_args("mixed_precision", x if x != "float" else "no")
@@ -198,10 +201,6 @@ class GeneralWidget(BaseWidget):
         self.widget.cache_latents_enable.clicked.connect(self.enable_disable_cache_latents)
         self.widget.cache_latents_to_disk_enable.clicked.connect(
             lambda x: self.edit_args("cache_latents_to_disk", x, True)
-        )
-        self.widget.keep_tokens_seperator_enable.clicked.connect(self.enable_disable_keep_tokens_sep)
-        self.widget.keep_tokens_seperator_input.textChanged.connect(
-            lambda x: self.edit_args("keep_tokens_separator", x, optional=True)
         )
         self.widget.comment_enable.clicked.connect(self.enable_disable_comment)
         self.widget.comment_input.textChanged.connect(
@@ -321,19 +320,6 @@ class GeneralWidget(BaseWidget):
             self.widget.cache_latents_to_disk_enable.isChecked() and checked,
             True,
         )
-        self.cacheLatentsChecked.emit(checked)
-
-    def enable_disable_keep_tokens_sep(self, checked: bool) -> None:
-        if "keep_tokens_separator" in self.args:
-            del self.args["keep_tokens_separator"]
-        self.widget.keep_tokens_seperator_input.setEnabled(checked)
-        self.keepTokensSepChecked.emit(checked)
-        if checked:
-            self.edit_args(
-                "keep_tokens_separator",
-                self.widget.keep_tokens_seperator_input.text(),
-                optional=True,
-            )
 
     def enable_disable_comment(self, checked: bool) -> None:
         if "training_comment" in self.args:
@@ -430,7 +416,6 @@ class GeneralWidget(BaseWidget):
         self.widget.grad_checkpointing_enable.setChecked(general.get("gradient_checkpointing", False))
         self.widget.grad_accumulation_enable.setChecked(bool(general.get("gradient_accumulation_steps", False)))
         self.widget.grad_accumulation_input.setValue(general.get("gradient_accumulation_steps", 1))
-        self.widget.seed_input.setValue(int(general.get("seed", 42)))
         self.widget.max_data_loader_n_workers_input.setValue(general.get("max_data_loader_n_workers", 1))
 
         mixed_prec = general.get("mixed_precision", "fp16")
@@ -441,8 +426,6 @@ class GeneralWidget(BaseWidget):
         self.widget.max_train_input.setValue(general.get("max_train_epochs", general.get("max_train_steps", 1)))
         self.widget.cache_latents_enable.setChecked(general.get("cache_latents", False))
         self.widget.cache_latents_to_disk_enable.setChecked(general.get("cache_latents_to_disk", False))
-        self.widget.keep_tokens_seperator_enable.setChecked(bool(general.get("keep_tokens_separator", False)))
-        self.widget.keep_tokens_seperator_input.setText(general.get("keep_tokens_separator", ""))
         self.widget.comment_enable.setChecked(bool(general.get("training_comment", False)))
         self.widget.comment_input.setText(general.get("training_comment", ""))
         self.widget.global_protected_tags_file_enable.setChecked(bool(general.get("protected_tags_file", False)))
@@ -482,12 +465,10 @@ class GeneralWidget(BaseWidget):
         self.edit_args("highvram", self.widget.high_vram_enable.isChecked(), True)
         self.edit_args("gradient_checkpointing", self.widget.grad_checkpointing_enable.isChecked(), True)
         self.enable_disable_grad_acc(self.widget.grad_accumulation_enable.isChecked())
-        self.edit_args("seed", int(self.widget.seed_input.value()))
         self.edit_args("max_data_loader_n_workers", self.widget.max_data_loader_n_workers_input.value())
         self.change_optim_type(self.widget.xformers_enable.isChecked(), self.widget.sdpa_enable.isChecked())
         self.change_max_mode(self.widget.max_train_selector.currentIndex())
         self.enable_disable_cache_latents(self.widget.cache_latents_enable.isChecked())
-        self.enable_disable_keep_tokens_sep(self.widget.keep_tokens_seperator_enable.isChecked())
         self.enable_disable_comment(self.widget.comment_enable.isChecked())
         self.enable_disable_global_protected_tags(self.widget.global_protected_tags_file_enable.isChecked())
 

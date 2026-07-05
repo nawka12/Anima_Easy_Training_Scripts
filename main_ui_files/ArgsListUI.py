@@ -16,8 +16,6 @@ from modules.BaseWidget import BaseWidget
 
 
 class ArgsWidget(QtWidgets.QWidget):
-    cacheLatentsChecked = Signal(bool)
-    keepTokensSepChecked = Signal(bool)
     maskedLossChecked = Signal(bool)
 
     def __init__(self, parent: QtWidgets.QWidget = None) -> None:
@@ -47,8 +45,6 @@ class ArgsWidget(QtWidgets.QWidget):
     def setup_args_widgets(self) -> None:
         self.general_widget.colap.toggle_collapsed()
         self.general_widget.colap.title_frame.setChecked(True)
-        self.general_widget.cacheLatentsChecked.connect(self.cacheLatentsChecked.emit)
-        self.general_widget.keepTokensSepChecked.connect(self.keepTokensSepChecked.emit)
 
         self.optimizer_widget.maskedLossChecked.connect(self.maskedLossChecked.emit)
 
