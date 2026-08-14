@@ -34,7 +34,7 @@ _DROPPED_ANIMA = (
     "discrete_flow_shift", "vae_chunk_size", "flow_use_ot",
 )
 
-_VALID_SCHEDULERS = {"constant", "linear", "cosine"}
+_VALID_SCHEDULERS = {"constant", "linear", "cosine", "wsd"}
 
 # optimizer_args keys that are epsilon-prediction / sd_scripts-only concepts
 _DROPPED_OPT = (
@@ -201,7 +201,10 @@ def convert(loaded: dict) -> tuple[dict, list[str]]:
             opt["lr_scheduler"] = "constant"
             warnings.add("scheduler: custom lr_scheduler_type -> constant (no dp equivalent)")
         elif sched and sched not in _VALID_SCHEDULERS:
-            mapped = "cosine" if "cosine" in sched else "constant"
+            if "warmup_stable_decay" in sched:
+                mapped = "wsd"
+            else:
+                mapped = "cosine" if "cosine" in sched else "constant"
             opt["lr_scheduler"] = mapped
             warnings.add(f"scheduler '{sched}' -> '{mapped}'")
         for key in _DROPPED_OPT:

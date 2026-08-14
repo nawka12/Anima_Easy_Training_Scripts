@@ -32,13 +32,52 @@ class OptimizerWidget(BaseWidget):
         super().setup_widget()
         self.widget.setupUi(self.content)
 
-        # diffusion-pipe supports only constant / linear / cosine schedulers
-        # (plus warmup_steps). The rex / restart / polynomial zoo is gone.
+        # diffusion-pipe supports only constant / linear / cosine / wsd
+        # schedulers (plus warmup_steps). The rex / restart / polynomial zoo
+        # is gone.
         self.widget.lr_scheduler_selector.blockSignals(True)
         self.widget.lr_scheduler_selector.clear()
-        self.widget.lr_scheduler_selector.addItems(["constant", "linear", "cosine"])
+        self.widget.lr_scheduler_selector.addItems(["constant", "linear", "cosine", "wsd"])
         self.widget.lr_scheduler_selector.setCurrentText("cosine")
         self.widget.lr_scheduler_selector.blockSignals(False)
+        self.widget.lr_scheduler_selector.setToolTip(
+            "<html><body><p>LR Scheduler is the Scheduler for the learning rate during the "
+            "training. 'wsd' is warmup-stable-decay: a linear warmup, a stable phase at the "
+            "peak LR, then a cosine decay down to the min LR.</p></body></html>"
+        )
+
+        # Three controls diffusion-pipe has no use for are repurposed as the
+        # WSD knobs; they stay disabled for every other scheduler.
+        warmup_frac_tip = (
+            "<html><body><p>Fraction of the total steps spent linearly warming up from ~0 "
+            "to the peak LR. Only used by the wsd scheduler.</p></body></html>"
+        )
+        self.widget.label_5.setText("WSD Warmup Fraction")
+        self.widget.label_5.setToolTip(warmup_frac_tip)
+        self.widget.poly_power_input.setToolTip(warmup_frac_tip)
+        self.widget.poly_power_input.setDecimals(3)
+        self.widget.poly_power_input.setMaximum(1.0)
+        self.widget.poly_power_input.setValue(0.01)
+
+        decay_frac_tip = (
+            "<html><body><p>Fraction of the total steps spent cosine-decaying from the peak "
+            "LR down to the min LR. Whatever is left after warmup and decay is the stable "
+            "phase at the peak LR. Only used by the wsd scheduler.</p></body></html>"
+        )
+        self.widget.gamma_label.setText("WSD Decay Fraction")
+        self.widget.gamma_label.setToolTip(decay_frac_tip)
+        self.widget.gamma_input.setToolTip(decay_frac_tip)
+        self.widget.gamma_input.setDecimals(3)
+        self.widget.gamma_input.setValue(0.1)
+
+        eta_min_tip = (
+            "<html><body><p>LR at the end of the wsd decay phase. 0 is typical; a small "
+            "positive value (e.g. 1e-6) matches the cosine scheduler's eta_min.</p></body></html>"
+        )
+        self.widget.min_lr_label.setText("WSD Min LR")
+        self.widget.min_lr_label.setToolTip(eta_min_tip)
+        self.widget.min_lr_input.setToolTip(eta_min_tip)
+        self.widget.min_lr_input.setText("0.0")
 
         self.widget.optimizer_item_widget.layout().setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
         for opt_arg in self.opt_args:
@@ -56,16 +95,20 @@ class OptimizerWidget(BaseWidget):
         self.widget.warmup_input.valueChanged.connect(
             lambda x: self.edit_args("warmup_ratio", round(x, 2), True)
         )
-        self.widget.min_lr_input.textChanged.connect(lambda x: self.edit_lr_args("min_lr", x, True))
+        self.widget.min_lr_input.textChanged.connect(lambda x: self.edit_lr("wsd_eta_min", x))
         self.widget.cosine_restart_input.valueChanged.connect(
             lambda x: self.edit_args("lr_scheduler_num_cycles", x)
         )
         self.widget.unet_lr_enable.clicked.connect(self.enable_disable_unet)
         self.widget.unet_lr_input.textChanged.connect(lambda x: self.edit_lr("unet_lr", x, True))
-        self.widget.poly_power_input.valueChanged.connect(lambda x: self.edit_args("lr_scheduler_power", x))
+        self.widget.poly_power_input.valueChanged.connect(
+            lambda x: self.edit_args("wsd_warmup_fraction", round(x, 3))
+        )
         self.widget.te_lr_enable.clicked.connect(self.enable_disable_te)
         self.widget.te_lr_input.textChanged.connect(lambda x: self.edit_te_lr("text_encoder_lr", x, True))
-        self.widget.gamma_input.valueChanged.connect(lambda x: self.edit_lr_args("gamma", 1 - x))
+        self.widget.gamma_input.valueChanged.connect(
+            lambda x: self.edit_args("wsd_decay_fraction", round(x, 3))
+        )
         self.widget.scale_weight_enable.clicked.connect(self.enable_disable_scale_weight_norms)
         self.widget.scale_weight_input.valueChanged.connect(
             lambda x: self.edit_args("scale_weight_norms", x, True)
@@ -187,11 +230,23 @@ class OptimizerWidget(BaseWidget):
                 del self.args[arg]
         # These controls have no diffusion-pipe equivalent.
         self.widget.cosine_restart_input.setEnabled(False)
-        self.widget.poly_power_input.setEnabled(False)
-        self.widget.min_lr_input.setEnabled(False)
-        self.widget.gamma_input.setEnabled(False)
         self.widget.d_param_input.setEnabled(False)
+        # The WSD knobs only apply to the wsd scheduler, which also brings its
+        # own warmup (train.py ignores warmup_steps when lr_scheduler = wsd).
+        is_wsd = value == "wsd"
+        self.widget.poly_power_input.setEnabled(is_wsd)
+        self.widget.gamma_input.setEnabled(is_wsd)
+        self.widget.min_lr_input.setEnabled(is_wsd)
+        self.widget.warmup_enable.setEnabled(not is_wsd)
+        for arg in ("wsd_warmup_fraction", "wsd_decay_fraction", "wsd_eta_min"):
+            if arg in self.args:
+                del self.args[arg]
+        if is_wsd:
+            self.edit_args("wsd_warmup_fraction", round(self.widget.poly_power_input.value(), 3))
+            self.edit_args("wsd_decay_fraction", round(self.widget.gamma_input.value(), 3))
+            self.edit_lr("wsd_eta_min", self.widget.min_lr_input.text())
         self.edit_args("lr_scheduler", value)
+        self.enable_disable_warmup(self.widget.warmup_enable.isChecked())
 
     def change_loss_type(self, value: str) -> None:
         value = value.replace(" ", "_").lower()
@@ -214,6 +269,8 @@ class OptimizerWidget(BaseWidget):
     def enable_disable_warmup(self, checked: bool) -> None:
         if "warmup_ratio" in self.args:
             del self.args["warmup_ratio"]
+        if self.widget.lr_scheduler_selector.currentText().strip().lower() == "wsd":
+            checked = False
         self.widget.warmup_input.setEnabled(checked)
         if not checked:
             return
@@ -283,11 +340,11 @@ class OptimizerWidget(BaseWidget):
         self.widget.main_lr_input.setText(str(args.get("learning_rate", "1e-4")))
         self.widget.warmup_enable.setChecked(bool(args.get("warmup_ratio", False)))
         self.widget.warmup_input.setValue(args.get("warmup_ratio", 0.0))
-        self.widget.min_lr_input.setText(str(args.get("lr_scheduler_args", {}).get("min_lr", "1e-6")))
+        self.widget.min_lr_input.setText(str(args.get("wsd_eta_min", "0.0")))
         self.widget.cosine_restart_input.setValue(args.get("lr_scheduler_num_cycles", 1))
         self.widget.unet_lr_enable.setChecked(bool(args.get("unet_lr", False)))
         self.widget.unet_lr_input.setText(str(args.get("unet_lr", "1e-4")))
-        self.widget.poly_power_input.setValue(args.get("lr_scheduler_power", 1.0))
+        self.widget.poly_power_input.setValue(args.get("wsd_warmup_fraction", 0.01))
         self.widget.te_lr_enable.setChecked(bool(args.get("text_encoder_lr", False)))
         te_lr_value = args.get("text_encoder_lr", "1e-4")
 
@@ -299,7 +356,7 @@ class OptimizerWidget(BaseWidget):
 
         self.widget.te_lr_input.setText(te_lr_display_text)
 
-        self.widget.gamma_input.setValue(round(1 - args.get("lr_scheduler_args", {}).get("gamma", 0.9), 2))
+        self.widget.gamma_input.setValue(args.get("wsd_decay_fraction", 0.1))
         self.widget.scale_weight_enable.setChecked(bool(args.get("scale_weight_norms", False)))
         self.widget.scale_weight_input.setValue(args.get("scale_weight_norms", 1.0))
         self.widget.max_grad_norm_input.setValue(args.get("max_grad_norm", 1.0))
